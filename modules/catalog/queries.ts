@@ -2,7 +2,7 @@ import type { PrismaClient } from "../../generated/prisma/client";
 import { findProductRecordById, listAdminProductRecords, listCategoryRecords, listHomeCategoryRecords } from "./repository";
 import type { AdminProductSummary, CategorySummary, ProductSummary } from "./types";
 
-export async function listHomeProducts(prisma: PrismaClient, options: { take?: number | null } = {}): Promise<ProductSummary[]> {
+export async function listHomeProducts(prisma: PrismaClient, options: { take?: number | null; order?: "default" | "latest" } = {}): Promise<ProductSummary[]> {
   const records = await prisma.product.findMany({
     where: {
       status: "ACTIVE",
@@ -10,7 +10,7 @@ export async function listHomeProducts(prisma: PrismaClient, options: { take?: n
     include: {
       category: true,
     },
-    orderBy: [{ sort: "asc" }, { id: "desc" }],
+    orderBy: options.order === "latest" ? [{ createdAt: "desc" }, { id: "desc" }] : [{ sort: "asc" }, { id: "desc" }],
     ...(options.take === null ? {} : { take: options.take ?? 12 }),
   });
 

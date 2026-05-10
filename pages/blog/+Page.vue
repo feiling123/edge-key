@@ -7,7 +7,7 @@
 
     <section class="space-y-6">
       <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-2">
-        <button class="blog-category-pill" :class="activeCategory === null ? 'blog-category-pill-active' : ''" @click="activeCategory = null">
+        <button class="blog-category-pill" :class="activeCategory === null ? 'blog-category-pill-active' : ''" @click="setActiveCategory(null)">
           {{ t("blog.all_categories") }}
           <span>{{ posts.length }}</span>
         </button>
@@ -16,7 +16,7 @@
           :key="category.id"
           class="blog-category-pill"
           :class="activeCategory === category.id ? 'blog-category-pill-active' : ''"
-          @click="activeCategory = category.id"
+          @click="setActiveCategory(category.id)"
         >
           {{ category.name }}
           <span>{{ categoryCount(category.id) }}</span>
@@ -31,9 +31,9 @@
         <span class="rounded-full bg-base-100 px-3 py-1 text-sm font-bold text-base-content/50 shadow-sm">{{ filteredPosts.length }}</span>
       </div>
 
-      <div v-if="filteredPosts.length" class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <div v-if="filteredPosts.length" class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <article
-          v-for="post in filteredPosts"
+          v-for="post in paginatedPosts"
           :key="post.slug"
           class="group overflow-hidden rounded-[22px] border border-base-300 bg-base-100 shadow-sm transition duration-300 hover:-translate-y-1.5 hover:scale-[1.012] hover:border-primary/30 hover:shadow-xl"
         >
@@ -61,7 +61,26 @@
         </article>
       </div>
 
-      <div v-else class="rounded-[24px] border border-dashed border-base-300 bg-base-100 p-10 text-center text-base-content/60">
+      <div v-if="totalPages > 1" class="flex flex-wrap items-center justify-center gap-2 pt-2">
+        <button type="button" class="blog-page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">
+          {{ t("blog.prev") }}
+        </button>
+        <button
+          v-for="page in totalPages"
+          :key="page"
+          type="button"
+          class="blog-page-btn"
+          :class="page === currentPage ? 'blog-page-btn-active' : ''"
+          @click="goToPage(page)"
+        >
+          {{ page }}
+        </button>
+        <button type="button" class="blog-page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">
+          {{ t("blog.next") }}
+        </button>
+      </div>
+
+      <div v-if="!filteredPosts.length" class="rounded-[24px] border border-dashed border-base-300 bg-base-100 p-10 text-center text-base-content/60">
         {{ t("blog.empty") }}
       </div>
     </section>
@@ -69,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useData } from "vike-vue/useData";
 import { useI18n } from "../../lib/client-i18n";
 import fallbackBlogImage from "../../assets/home-n.png";
@@ -78,6 +97,8 @@ import type { Data } from "./+data";
 const { categories, posts } = useData<Data>();
 const { locale, t } = useI18n();
 const activeCategory = ref<string | null>(null);
+const currentPage = ref(1);
+const pageSize = 12;
 
 const localizedCategories = computed(() => categories.map((category) => ({
   id: category.id,
@@ -96,6 +117,23 @@ const filteredPosts = computed(() => {
   return localizedPosts.value.filter((post) => post.categoryId === activeCategory.value);
 });
 
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredPosts.value.length / pageSize)));
+
+const paginatedPosts = computed(() => {
+  const start = (currentPage.value - 1) * pageSize;
+  return filteredPosts.value.slice(start, start + pageSize);
+});
+
+watch(activeCategory, () => {
+  currentPage.value = 1;
+});
+
+watch(filteredPosts, () => {
+  if (currentPage.value > totalPages.value) {
+    currentPage.value = totalPages.value;
+  }
+});
+
 const activeCategoryName = computed(() => {
   if (!activeCategory.value) return t("blog.all_categories");
   return localizedCategories.value.find((category) => category.id === activeCategory.value)?.name || "";
@@ -107,6 +145,14 @@ function categoryName(id: string) {
 
 function categoryCount(id: string) {
   return posts.filter((post) => post.categoryId === id).length;
+}
+
+function setActiveCategory(id: string | null) {
+  activeCategory.value = id;
+}
+
+function goToPage(page: number) {
+  currentPage.value = Math.min(totalPages.value, Math.max(1, page));
 }
 </script>
 
@@ -147,6 +193,35 @@ function categoryCount(id: string) {
 }
 
 .blog-category-pill-active:hover {
+  color: var(--color-primary-content);
+}
+
+.blog-page-btn {
+  min-width: 2.5rem;
+  border-radius: 999px;
+  background: var(--color-base-100);
+  padding: 0.55rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: color-mix(in oklab, currentColor 70%, transparent);
+  box-shadow: 0 1px 4px color-mix(in oklab, black 6%, transparent);
+  transition: transform 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+.blog-page-btn:not(:disabled):hover {
+  transform: translateY(-1px) scale(1.04);
+  background: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+}
+
+.blog-page-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.blog-page-btn-active,
+.blog-page-btn-active:not(:disabled):hover {
+  background: var(--color-primary);
   color: var(--color-primary-content);
 }
 </style>

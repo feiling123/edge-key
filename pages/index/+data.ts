@@ -7,7 +7,7 @@ export type Data = ReturnType<typeof data>;
 export async function data(pageContext: { prisma: import("../../generated/prisma/client").PrismaClient }) {
   return {
     site: await getPublicSiteInfo(pageContext.prisma),
-    catalog: await getHomeCatalog(pageContext.prisma),
+    catalog: await getHomeCatalog(pageContext.prisma, { productLimit: 9, productOrder: "latest" }),
     blog: await getPublicBlogIndex(pageContext.prisma),
   };
 }
