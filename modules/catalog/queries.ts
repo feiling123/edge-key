@@ -20,6 +20,7 @@ export async function listHomeProducts(prisma: PrismaClient): Promise<ProductSum
     categoryName: item.category?.name ?? null,
     name: item.name,
     slug: item.slug,
+    subtitle: item.subtitle,
     coverImage: item.coverImage,
     price: item.price,
   }));

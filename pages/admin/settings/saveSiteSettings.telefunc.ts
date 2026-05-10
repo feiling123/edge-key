@@ -8,6 +8,10 @@ export async function onSaveSiteSettings(input: {
   logoIcon?: string;
   logo?: string;
   notice?: string;
+  noticePageZh?: string;
+  noticePageEn?: string;
+  aboutPageZh?: string;
+  aboutPageEn?: string;
   supportContact?: string;
   footerText?: string;
   orderNotice?: string;

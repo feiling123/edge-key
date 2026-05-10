@@ -1,6 +1,7 @@
 import { logger } from "../lib/logger";
 import migration0001 from "../prisma/migrations/0001_init.sql?raw";
 import migration0002 from "../prisma/migrations/0002_runtime_secret.sql?raw";
+import migration0003 from "../prisma/migrations/0003_site_content_pages.sql?raw";
 
 const bootstrapPromises = new WeakMap<D1Database, Promise<void>>();
 const migrationTable = "__edgekey_runtime_migrations";
@@ -8,6 +9,7 @@ const migrationTable = "__edgekey_runtime_migrations";
 const migrations = [
   { id: "0001_init", sql: toIdempotentSql(migration0001) },
   { id: "0002_runtime_secret", sql: toIdempotentSql(migration0002) },
+  { id: "0003_site_content_pages", sql: toIdempotentSql(migration0003) },
 ];
 
 export function ensureD1Ready(database: D1Database) {
@@ -58,8 +60,23 @@ function toIdempotentSql(sql: string) {
 
 async function executeSqlScript(database: D1Database, sql: string) {
   for (const statement of splitSqlStatements(sql)) {
-    await database.prepare(normalizeSql(statement)).run();
+    try {
+      await database.prepare(normalizeSql(statement)).run();
+    } catch (error) {
+      if (isIgnorableMigrationError(error)) {
+        logger.info("d1.bootstrap.ignored_migration_statement", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
+      throw error;
+    }
   }
+}
+
+function isIgnorableMigrationError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /duplicate column name|already exists/i.test(message);
 }
 
 function splitSqlStatements(sql: string) {
@@ -190,9 +207,18 @@ async function seedD1(database: D1Database) {
 
   await database
     .prepare(
-      `INSERT INTO "SiteSetting" ("id", "siteName", "siteSubtitle", "notice", "updatedAt") VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT("id") DO NOTHING`,
+      `INSERT INTO "SiteSetting" ("id", "siteName", "siteSubtitle", "notice", "noticePageZh", "noticePageEn", "aboutPageZh", "aboutPageEn", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT("id") DO NOTHING`,
     )
-    .bind(1, "EK发卡商城", "Cloudflare Workers 免费部署自动发卡商城", "全球部署，一触即达。")
+    .bind(
+      1,
+      "EK发卡商城",
+      "Cloudflare Workers 免费部署自动发卡商城",
+      "全球部署，一触即达。",
+      "欢迎使用本站。购买前请确认商品说明、发货方式和售后规则。",
+      "Welcome. Please review product details, delivery method, and support rules before purchasing.",
+      "本站是一个基于 Cloudflare Workers 的自动发卡商城，支持数字商品展示、在线支付和自动发货。",
+      "This storefront runs on Cloudflare Workers and supports digital product listing, online payment, and automated delivery.",
+    )
     .run();
 
   const templates = [

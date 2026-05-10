@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="editor-shell overflow-hidden rounded-[22px] border border-base-300 bg-base-100 shadow-sm">
+  <div ref="rootRef" class="editor-shell overflow-visible rounded-[22px] border border-base-300 bg-base-100 shadow-sm">
     <div class="editor-toolbar flex flex-wrap items-center gap-3 border-b border-base-300 bg-base-200/50 px-3 py-3">
       <div class="toolbar-group">
         <button type="button" class="toolbar-button toolbar-button-wide" :title="l('正文', 'Paragraph')" :aria-label="l('正文', 'Paragraph')" @mousedown.prevent @click="editor?.chain().focus().setParagraph().run()">
@@ -159,7 +159,7 @@
           </button>
           <div
             v-if="openPanel === 'link'"
-            class="panel-popover right-0 z-[20] mt-2 w-72 rounded-2xl border border-base-300 bg-base-100 p-3 shadow-xl"
+            class="panel-popover left-0 z-[20] mt-2 w-72 rounded-2xl border border-base-300 bg-base-100 p-3 shadow-xl"
             @mousedown.prevent
             @click.stop
           >
@@ -183,7 +183,7 @@
           <button type="button" class="toolbar-button toolbar-button-icon" :class="openPanel === 'image' ? 'toolbar-button-active' : ''" :title="l('插入图片', 'Insert Image')" :aria-label="l('插入图片', 'Insert Image')" @mousedown.prevent @click.stop="toggleImagePanel">
             <svg viewBox="0 0 20 20" class="toolbar-icon" aria-hidden="true"><path d="M4.75 4A1.75 1.75 0 0 0 3 5.75v8.5C3 15.216 3.784 16 4.75 16h10.5A1.75 1.75 0 0 0 17 14.25v-8.5A1.75 1.75 0 0 0 15.25 4H4.75Zm0 1.5h10.5a.25.25 0 0 1 .25.25v5.072l-2.117-2.118a1.75 1.75 0 0 0-2.475 0l-2.25 2.25-.617-.617a1.75 1.75 0 0 0-2.475 0L4.5 11.403V5.75a.25.25 0 0 1 .25-.25Zm-.25 7.974 2.126-2.126a.25.25 0 0 1 .354 0l1.147 1.147a.75.75 0 0 0 1.06 0l2.78-2.78a.25.25 0 0 1 .354 0l3.179 3.179v1.356a.25.25 0 0 1-.25.25H4.75a.25.25 0 0 1-.25-.25v-.776ZM13.25 7a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z" fill="currentColor"/></svg>
           </button>
-          <div v-if="openPanel === 'image'" class="panel-popover right-0 z-[20] mt-2 w-72 rounded-2xl border border-base-300 bg-base-100 p-3 shadow-xl" @mousedown.prevent @click.stop>
+          <div v-if="openPanel === 'image'" class="panel-popover left-0 z-[20] mt-2 w-72 rounded-2xl border border-base-300 bg-base-100 p-3 shadow-xl" @mousedown.prevent @click.stop>
             <div class="space-y-2.5">
               <div class="panel-header">
                 <div class="panel-title">{{ l("插入图片", "Insert Image") }}</div>
@@ -683,12 +683,18 @@ onBeforeUnmount(() => {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+:deep(.editor-toolbar) {
+  position: relative;
+  overflow: visible;
+}
+
 :deep(.editor-shell:focus-within) {
   border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 45%, transparent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #3b82f6) 14%, transparent);
 }
 
 :deep(.toolbar-group) {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
@@ -703,7 +709,8 @@ onBeforeUnmount(() => {
 
 :deep(.panel-popover) {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 0.4rem);
+  max-width: calc(100vw - 2rem);
 }
 
 :deep(.toolbar-spacer) {

@@ -15,6 +15,10 @@ export function upsertSiteSettingRecord(
     logoIcon?: string | null;
     logo?: string | null;
     notice?: string | null;
+    noticePageZh?: string | null;
+    noticePageEn?: string | null;
+    aboutPageZh?: string | null;
+    aboutPageEn?: string | null;
     supportContact?: string | null;
     footerText?: string | null;
     orderNotice?: string | null;
@@ -30,6 +34,10 @@ export function upsertSiteSettingRecord(
       logoIcon: input.logoIcon ?? null,
       logo: input.logo ?? null,
       notice: input.notice ?? null,
+      noticePageZh: input.noticePageZh ?? null,
+      noticePageEn: input.noticePageEn ?? null,
+      aboutPageZh: input.aboutPageZh ?? null,
+      aboutPageEn: input.aboutPageEn ?? null,
       supportContact: input.supportContact ?? null,
       footerText: input.footerText ?? null,
       orderNotice: input.orderNotice ?? null,
@@ -41,6 +49,10 @@ export function upsertSiteSettingRecord(
       logoIcon: input.logoIcon ?? null,
       logo: input.logo ?? null,
       notice: input.notice ?? null,
+      noticePageZh: input.noticePageZh ?? null,
+      noticePageEn: input.noticePageEn ?? null,
+      aboutPageZh: input.aboutPageZh ?? null,
+      aboutPageEn: input.aboutPageEn ?? null,
       supportContact: input.supportContact ?? null,
       footerText: input.footerText ?? null,
       orderNotice: input.orderNotice ?? null,

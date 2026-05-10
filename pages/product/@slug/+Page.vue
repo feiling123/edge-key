@@ -94,6 +94,7 @@ import { onMounted, watch } from "vue";
 import { saveLocalOrder } from "../../../lib/local-orders";
 import { useI18n } from "../../../lib/client-i18n";
 import type { Data } from "./+data";
+import { formatRichContent } from "../../../lib/utils/html";
 
 import emptyCoverUrl from "../../../assets/empty.jpg";
 
@@ -128,7 +129,7 @@ watch(() => form.paymentProvider, (provider) => {
   else form.paymentChannel = "";
 });
 
-const descriptionHtml = computed(() => formatDescriptionHtml(product?.description || ""));
+const descriptionHtml = computed(() => formatRichContent(product?.description || "", t("product.empty_description")));
 
 async function handleCreateOrder() {
   if (!product) return;
@@ -180,27 +181,6 @@ async function handleCreateOrder() {
   }
 }
 
-function formatDescriptionHtml(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return `<p>${t("product.empty_description")}</p>`;
-  }
-
-  if (/<[a-z][\s\S]*>/i.test(trimmed)) {
-    return trimmed;
-  }
-
-  return `<p>${escapeHtml(trimmed).replace(/\r?\n/g, "<br>")}</p>`;
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 </script>
 
 <style scoped>

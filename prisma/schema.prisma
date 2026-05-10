@@ -124,6 +124,10 @@ model SiteSetting {
   logoIcon       String?
   logo           String?
   notice         String?
+  noticePageZh   String?
+  noticePageEn   String?
+  aboutPageZh    String?
+  aboutPageEn    String?
   supportContact String?
   footerText     String?
   orderNotice    String?

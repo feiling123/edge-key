@@ -9,8 +9,18 @@ VALUES ('admin', '$2b$10$viMe8RgcpM30gmmF9OpOcuA/QgleSIUk5VRtqjOulfSIbgK5jQCI6',
 ON CONFLICT("username") DO NOTHING;
 
 -- 站点设置
-INSERT INTO "SiteSetting" ("id", "siteName", "siteSubtitle", "notice", "updatedAt")
-VALUES (1, 'EK发卡商城', 'Cloudflare Workers 免费部署自动发卡商城', '全球部署，一触即达。', CURRENT_TIMESTAMP)
+INSERT INTO "SiteSetting" ("id", "siteName", "siteSubtitle", "notice", "noticePageZh", "noticePageEn", "aboutPageZh", "aboutPageEn", "updatedAt")
+VALUES (
+  1,
+  'EK发卡商城',
+  'Cloudflare Workers 免费部署自动发卡商城',
+  '全球部署，一触即达。',
+  '欢迎使用本站。购买前请确认商品说明、发货方式和售后规则。',
+  'Welcome. Please review product details, delivery method, and support rules before purchasing.',
+  '本站是一个基于 Cloudflare Workers 的自动发卡商城，支持数字商品展示、在线支付和自动发货。',
+  'This storefront runs on Cloudflare Workers and supports digital product listing, online payment, and automated delivery.',
+  CURRENT_TIMESTAMP
+)
 ON CONFLICT("id") DO NOTHING;
 
 -- Telegram 通知模板
