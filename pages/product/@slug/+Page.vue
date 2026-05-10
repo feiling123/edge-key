@@ -48,10 +48,21 @@
           <div class="space-y-2">
             <div class="text-sm font-medium">{{ t("product.payment_method") }}</div>
             <div class="grid gap-3">
-              <label v-for="method in paymentMethods" :key="method.provider" class="rounded-2xl border border-base-300 p-4 transition duration-300 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5">
+              <label
+                v-for="method in paymentMethods"
+                :key="paymentMethodKey(method)"
+                class="rounded-2xl border border-base-300 p-4 transition duration-300 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5"
+                :class="{ 'border-primary bg-primary/5': selectedPaymentMethodKey === paymentMethodKey(method) }"
+                @click="selectPaymentMethod(method)"
+              >
                 <div class="flex items-center justify-between gap-3">
                   <span>{{ method.label }}</span>
-                  <input v-model="form.paymentProvider" type="radio" class="radio radio-primary radio-sm" :value="method.provider" />
+                  <input
+                    type="radio"
+                    class="radio radio-primary radio-sm"
+                    :checked="selectedPaymentMethodKey === paymentMethodKey(method)"
+                    @change="selectPaymentMethod(method)"
+                  />
                 </div>
               </label>
             </div>
@@ -88,7 +99,7 @@ import { useData } from "vike-vue/useData";
 import { isEmail } from "../../../lib/validators/email";
 import { formatCents } from "../../../lib/utils/money";
 import { onCreateOrder } from "./createOrder.telefunc";
-import type { PaymentProvider } from "../../../modules/payment/types";
+import type { PaymentMethodItem, PaymentProvider } from "../../../modules/payment/types";
 import { isMobile } from "../../../lib/utils/device";
 import { onMounted, watch } from "vue";
 import { saveLocalOrder } from "../../../lib/local-orders";
@@ -107,29 +118,51 @@ const epayChannels = [
   { value: "wxpay", label: () => l("微信支付", "WeChat Pay") },
 ] as const;
 
+function paymentMethodKey(method: Pick<PaymentMethodItem, "provider" | "paymentChannel">) {
+  return `${method.provider}:${method.paymentChannel ?? ""}`;
+}
 
+const firstPaymentMethod = paymentMethods[0] ?? null;
+const firstPaymentChannel =
+  firstPaymentMethod?.provider === "BEPUSDT"
+    ? firstPaymentMethod.paymentChannel ?? ""
+    : firstPaymentMethod?.provider === "EPAY"
+      ? "alipay"
+      : "alipay_h5";
 
 const form = reactive({
   quantity: product?.minBuy ?? 1,
   contactValue: "",
   buyerNote: "",
-  paymentProvider: (paymentMethods[0]?.provider ?? "BEPUSDT") as PaymentProvider,
-  paymentChannel: "alipay_h5",
+  paymentProvider: (firstPaymentMethod?.provider ?? "BEPUSDT") as PaymentProvider,
+  paymentChannel: firstPaymentChannel,
 });
+const selectedPaymentMethodKey = ref(firstPaymentMethod ? paymentMethodKey(firstPaymentMethod) : "");
+const selectedPaymentMethod = computed(() => paymentMethods.find((method) => paymentMethodKey(method) === selectedPaymentMethodKey.value) ?? paymentMethods[0] ?? null);
 
 let mobile = false;
 onMounted(() => {
   mobile = isMobile();
-  form.paymentChannel = mobile ? "alipay_h5" : "alipay_pc";
+  if (form.paymentProvider === "ALIPAY") {
+    form.paymentChannel = mobile ? "alipay_h5" : "alipay_pc";
+  }
 });
 
 watch(() => form.paymentProvider, (provider) => {
   if (provider === "EPAY") form.paymentChannel = "alipay";
   else if (provider === "ALIPAY") form.paymentChannel = mobile ? "alipay_h5" : "alipay_pc";
-  else form.paymentChannel = "";
+  else if (provider !== "BEPUSDT") form.paymentChannel = "";
 });
 
 const descriptionHtml = computed(() => formatRichContent(product?.description || "", t("product.empty_description")));
+
+function selectPaymentMethod(method: PaymentMethodItem) {
+  selectedPaymentMethodKey.value = paymentMethodKey(method);
+  form.paymentProvider = method.provider;
+  if (method.provider === "BEPUSDT") {
+    form.paymentChannel = method.paymentChannel ?? "";
+  }
+}
 
 async function handleCreateOrder() {
   if (!product) return;
@@ -147,13 +180,14 @@ async function handleCreateOrder() {
 
   submitting.value = true;
   errorMessage.value = "";
+  const paymentMethod = selectedPaymentMethod.value;
 
   try {
     const result = await onCreateOrder({
       productId: product.id,
       quantity: form.quantity,
-      paymentProvider: form.paymentProvider,
-      paymentChannel: form.paymentProvider === "EPAY" || form.paymentProvider === "ALIPAY" ? form.paymentChannel : undefined,
+      paymentProvider: paymentMethod?.provider ?? form.paymentProvider,
+      paymentChannel: paymentMethod?.provider === "BEPUSDT" ? paymentMethod.paymentChannel : (form.paymentProvider === "EPAY" || form.paymentProvider === "ALIPAY" ? form.paymentChannel : undefined),
       contactType: "EMAIL",
       contactValue: contactEmail,
       buyerNote: form.buyerNote,

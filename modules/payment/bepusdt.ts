@@ -9,6 +9,7 @@ interface BepusdtConfig {
   appSecret?: string;
   merchantId?: string;
   paymentType?: string;
+  paymentTypes?: string[];
   notifyUrl?: string;
   returnUrl?: string;
 }
@@ -41,15 +42,32 @@ function signCallback(payload: Record<string, string | number>, secret: string) 
   return signSortedPayload(payload, secret);
 }
 
+function normalizePaymentTypes(config: BepusdtConfig) {
+  return Array.from(
+    new Set(
+      [...(Array.isArray(config.paymentTypes) ? config.paymentTypes : []), config.paymentType ?? ""]
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 export function createBepusdtAdapter(config: BepusdtConfig): PaymentProviderAdapter {
   return {
     async createPayment(input) {
-      if (!config.baseUrl || !config.appSecret || !config.paymentType) {
+      const enabledPaymentTypes = normalizePaymentTypes(config);
+      const paymentType = input.paymentChannel?.trim() || config.paymentType?.trim() || enabledPaymentTypes[0] || "";
+
+      if (!config.baseUrl || !config.appSecret || !paymentType) {
         throw badRequestError("BEpusdt 配置不完整", "BEPUSDT_CONFIG_INCOMPLETE");
       }
 
+      if (enabledPaymentTypes.length > 0 && !enabledPaymentTypes.includes(paymentType)) {
+        throw badRequestError("BEpusdt 未启用该支付币种", "BEPUSDT_PAYMENT_TYPE_DISABLED");
+      }
+
       const payload = {
-        type: config.paymentType,
+        type: paymentType,
         order_id: input.orderNo,
         amount: Number((input.amount / 100).toFixed(2)),
         notify_url: input.notifyUrl,
@@ -68,18 +86,29 @@ export function createBepusdtAdapter(config: BepusdtConfig): PaymentProviderAdap
         };
       };
 
-      let json: BepusdtResponse;
+      let response: Response;
+      let responseText = "";
       try {
-        const response = await fetch(`${normalizeBaseUrl(config.baseUrl)}/api/create_order`, {
+        response = await fetch(`${normalizeBaseUrl(config.baseUrl)}/api/create_order`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ ...payload, merchant_id: merchantId, signature }),
         });
-        const text = (await response.text()).replace(/^\uFEFF/, "");
-        json = JSON.parse(text) as BepusdtResponse;
+        responseText = (await response.text()).replace(/^\uFEFF/, "").trim();
       } catch (err) {
         throw externalServiceError(
           `BEpusdt 请求失败: ${err instanceof Error ? err.message : String(err)}`,
+          "BEPUSDT_REQUEST_FAILED"
+        );
+      }
+
+      let json: BepusdtResponse;
+      try {
+        json = JSON.parse(responseText) as BepusdtResponse;
+      } catch (err) {
+        const fallback = responseText || `HTTP ${response.status} ${response.statusText}`;
+        throw externalServiceError(
+          `BEpusdt 返回非 JSON: ${fallback.slice(0, 220)}`,
           "BEPUSDT_INVALID_RESPONSE"
         );
       }

@@ -78,7 +78,13 @@ const form = reactive({
 
 const extraFields = reactive(
   props.provider === 'BEPUSDT'
-    ? { appId: props.initialValue?.appId ?? '', appSecret: props.initialValue?.appSecret ?? '', merchantId: props.initialValue?.merchantId ?? 'default', paymentType: props.initialValue?.paymentType ?? 'USDT-TRC20' }
+    ? {
+        appId: props.initialValue?.appId ?? '',
+        appSecret: props.initialValue?.appSecret ?? '',
+        merchantId: props.initialValue?.merchantId ?? 'default',
+        paymentType: props.initialValue?.paymentType ?? props.initialValue?.paymentTypes?.[0] ?? 'USDT-TRC20',
+        paymentTypes: props.initialValue?.paymentTypes?.length ? props.initialValue.paymentTypes : [props.initialValue?.paymentType ?? 'USDT-TRC20'],
+      }
     : props.provider === 'ALIPAY'
       ? { alipayAppId: props.initialValue?.alipayAppId ?? '', alipayPrivateKey: props.initialValue?.alipayPrivateKey ?? '', alipayPublicKey: props.initialValue?.alipayPublicKey ?? '' }
       : props.provider === 'STRIPE'
@@ -105,7 +111,8 @@ async function handleSave() {
       (extraFields as any).appId = result.appId ?? '';
       (extraFields as any).appSecret = result.appSecret ?? '';
       (extraFields as any).merchantId = result.merchantId ?? 'default';
-      (extraFields as any).paymentType = result.paymentType ?? 'USDT-TRC20';
+      (extraFields as any).paymentType = result.paymentType ?? result.paymentTypes?.[0] ?? 'USDT-TRC20';
+      (extraFields as any).paymentTypes = result.paymentTypes?.length ? result.paymentTypes : [(extraFields as any).paymentType];
     } else if (props.provider === 'STRIPE') {
       (extraFields as any).stripeSecretKey = (result as any).stripeSecretKey ?? '';
       (extraFields as any).stripeWebhookSecret = (result as any).stripeWebhookSecret ?? '';

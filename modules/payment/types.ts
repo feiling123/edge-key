@@ -5,6 +5,7 @@ export interface PaymentMethodItem {
   label: string;
   enabled: boolean;
   baseUrl?: string;
+  paymentChannel?: string;
 }
 
 export interface PaymentConfigValue {
@@ -16,6 +17,7 @@ export interface PaymentConfigValue {
   appSecret?: string;
   merchantId?: string;
   paymentType?: string;
+  paymentTypes?: string[];
   pid?: string;
   key?: string;
   notifyUrl?: string;

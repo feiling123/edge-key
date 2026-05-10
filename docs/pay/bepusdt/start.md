@@ -8,7 +8,7 @@
 
 - **网关地址**：只需填写 Upay Pro V3 域名，如 `https://pay.example.com`，系统会自动拼接 API 路径（`/api/create_order`）。
 - **商户 ID**：Upay Pro V3 后台创建的商户 ID，默认 `default`。
-- **支付币种**：Upay Pro V3 后台该商户已配置钱包的币种，例如 `USDT-TRC20`。
+- **支付币种**：Upay Pro V3 后台该商户已配置钱包的币种，可多选，例如 `USDT-TRC20`、`TRX`。
 - **App Secret**：Upay Pro V3 商户签名密钥。
 
 ![BEpusdt支付配置](./0.jpg)
@@ -39,7 +39,7 @@
 
 **Upay Pro V3 专用字段**：
 - **商户 ID**：Upay Pro V3 后台商户 ID，默认 `default`
-- **支付币种**：必须与 Upay Pro V3 钱包配置中的币种一致
+- **支付币种**：必须与 Upay Pro V3 钱包配置中的币种一致；多选后前台会按币种分别展示支付入口
 - **App Secret**：Upay Pro V3 商户签名密钥
 
 
@@ -60,7 +60,7 @@
 配置完成后，请按照以下步骤进行测试：
 
 1. 进入 EdgeKey 前台，选择一个商品进行购买。
-2. 在结算页面选择数字货币支付方式。
+2. 在结算页面选择具体数字货币币种。
 3. 观察是否正常跳转到收银台页面。
 
 ## 故障排查
@@ -69,13 +69,14 @@
 
 - **检查网络连通性**：确认 EdgeKey Worker 能够正常访问 Upay Pro V3 域名。
 - **检查商户 ID、支付币种和 App Secret**：确认与 Upay Pro V3 后台商户、钱包、签名密钥一致。
+- **Cloudflare 1042**：如果 EdgeKey 和 Upay Pro V3 都部署在 Cloudflare Workers，同域 Worker 之间 `fetch` 可能触发 1042；项目已启用 `global_fetch_strictly_public` 兼容标记，更新部署后再测试。
 - **检查回调地址**：确保异步通知地址可以从外部访问，且格式正确。
 - **检查站点设置**：确保在「站点设置」中配置了正确的网站地址。
 - **查看日志**：检查 EdgeKey 和 Upay Pro V3 的 Worker 日志，获取更详细的错误信息。
 
 ## 工作模式
 
-本项目的 BEpusdt 适配器已按 Upay Pro V3 兼容接口工作，创建订单接口为 `/api/create_order`。需要在支付配置中选择商户 ID 和支付币种，且该商户必须在 Upay Pro V3 后台配置对应钱包。
+本项目的 BEpusdt 适配器已按 Upay Pro V3 兼容接口工作，创建订单接口为 `/api/create_order`。需要在支付配置中选择商户 ID 和一个或多个支付币种，且该商户必须在 Upay Pro V3 后台配置对应钱包。
 
 ## 相关链接
 

@@ -5,7 +5,7 @@ import { conflictError, notFoundError } from "../../lib/app-error";
 import { validateOrderInput } from "../../lib/validators/order";
 import { getAdminContext, logAdminOperation } from "../auth/service";
 import { getAdminProductById } from "../catalog/service";
-import { createPaymentForOrder, handlePaymentNotify } from "../payment/service";
+import { createPaymentForOrder, handlePaymentNotify, validatePaymentSelection } from "../payment/service";
 import { closeOrderRecord, createOrderRecord, findOrderById, findOrderWithProduct, listOrderRecords } from "./repository";
 import { generateOrderNo, generateQueryToken } from "./number";
 import { logger } from "../../lib/logger";
@@ -57,12 +57,13 @@ export async function createOrder(input: {
   const quantity = Math.max(product.minBuy, Math.min(product.maxBuy, Math.floor(input.quantity)));
   const orderNo = generateOrderNo();
   const queryToken = generateQueryToken();
-  let paymentChannel: string | null = null;
-  if (input.paymentProvider === "EPAY") {
-    paymentChannel = input.paymentChannel === "wxpay" ? "wxpay" : "alipay";
-  } else if (input.paymentProvider === "ALIPAY") {
-    paymentChannel = input.paymentChannel ?? "alipay_h5";
-  }
+  const paymentChannel = await validatePaymentSelection(
+    {
+      provider: input.paymentProvider,
+      paymentChannel: input.paymentChannel,
+    },
+    prisma,
+  );
 
   const order = await createOrderRecord(prisma, {
     orderNo,

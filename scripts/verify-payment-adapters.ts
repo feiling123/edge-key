@@ -90,6 +90,55 @@ async function verifyBepusdtAdapter() {
   } finally {
     globalThis.fetch = originalFetch;
   }
+
+  const multiCurrencyAdapter = createBepusdtAdapter({
+    baseUrl: "https://bep.example.com",
+    appSecret: "secret-token",
+    merchantId: "default",
+    paymentType: "USDT-TRC20",
+    paymentTypes: ["USDT-TRC20", "TRX"],
+  });
+  let selectedType = "";
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const requestBody = JSON.parse(String(init?.body || "{}"));
+    selectedType = requestBody.type;
+    return new Response(
+      JSON.stringify({
+        status_code: 200,
+        data: { trade_id: "trade_trx", payment_url: "https://bep.example.com/pay/trade_trx" },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    await multiCurrencyAdapter.createPayment({
+      orderNo: "ORD124",
+      amount: 1200,
+      productName: "trx product",
+      notifyUrl: "https://shop.example.com/api/payments/bepusdt/notify",
+      returnUrl: "https://shop.example.com/order/ORD124?token=abc",
+      paymentChannel: "TRX",
+    });
+    assert(selectedType === "TRX", "BEpusdt createPayment should use selected currency from paymentChannel");
+
+    let rejectedInvalidType = false;
+    try {
+      await multiCurrencyAdapter.createPayment({
+        orderNo: "ORD125",
+        amount: 1200,
+        productName: "invalid product",
+        notifyUrl: "https://shop.example.com/api/payments/bepusdt/notify",
+        returnUrl: "https://shop.example.com/order/ORD125?token=abc",
+        paymentChannel: "USDC-BSC",
+      });
+    } catch {
+      rejectedInvalidType = true;
+    }
+    assert(rejectedInvalidType, "BEpusdt createPayment should reject unconfigured currencies");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 }
 
 async function verifyEpayAdapter() {

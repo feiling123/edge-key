@@ -5,22 +5,17 @@
       ← {{ t("blog.back") }}
     </a>
 
-    <header class="relative overflow-hidden rounded-[28px] border border-base-300 bg-base-100 shadow-sm">
-      <img v-if="post.coverImage" :src="post.coverImage" :alt="localizedPost.title" class="absolute inset-0 h-full w-full object-cover" />
-      <div class="absolute inset-0" :class="post.coverImage ? 'bg-gradient-to-r from-black/78 via-black/48 to-black/20' : 'bg-base-100'"></div>
-      <div class="relative z-10 px-6 py-10 md:px-10 md:py-14" :class="post.coverImage ? 'text-white' : 'text-base-content'">
-        <div class="flex flex-wrap items-center gap-2 text-xs font-bold" :class="post.coverImage ? 'text-white/70' : 'text-base-content/50'">
-          <span class="rounded-full px-3 py-1" :class="post.coverImage ? 'bg-white/15 text-white' : 'bg-primary/10 text-primary'">{{ categoryName(post.categoryId) }}</span>
+    <section class="overflow-hidden rounded-[28px] border border-base-300 bg-base-100 shadow-sm">
+      <img v-if="post.coverImage" :src="post.coverImage" :alt="localizedPost.title" class="max-h-[420px] w-full object-cover" />
+      <div class="px-6 py-10 md:px-10 md:py-14">
+        <div class="flex flex-wrap items-center gap-2 text-xs font-bold text-base-content/50">
+          <span class="rounded-full bg-primary/10 px-3 py-1 text-primary">{{ categoryName(post.categoryId) }}</span>
           <time :datetime="post.date">{{ post.date }}</time>
           <span>{{ post.readMinutes }} min</span>
         </div>
-        <h1 class="mt-5 max-w-3xl text-3xl font-black leading-tight md:text-5xl" :class="post.coverImage ? 'text-white' : 'text-base-content'">{{ localizedPost.title }}</h1>
-        <p class="mt-4 max-w-2xl text-base font-semibold leading-relaxed" :class="post.coverImage ? 'text-white/80' : 'text-base-content/65'">{{ localizedPost.excerpt }}</p>
+        <h1 class="mt-5 max-w-3xl text-3xl font-black leading-tight text-base-content md:text-5xl">{{ localizedPost.title }}</h1>
+        <div class="prose mt-8 max-w-none text-base-content/80" v-html="localizedPost.contentHtml"></div>
       </div>
-    </header>
-
-    <section class="rounded-[24px] border border-base-300 bg-base-100 p-6 shadow-sm md:p-8">
-      <div class="prose max-w-none text-base-content/80" v-html="localizedPost.contentHtml"></div>
     </section>
 
     <section v-if="localizedRelated.length" class="rounded-[24px] border border-base-300 bg-base-100 p-6 shadow-sm">
@@ -50,7 +45,6 @@ const { locale, t } = useI18n();
 
 const localizedPost = computed(() => ({
   title: post?.title[locale.value] || "",
-  excerpt: post?.excerpt[locale.value] || "",
   contentHtml: post?.contentHtml[locale.value] || "",
 }));
 

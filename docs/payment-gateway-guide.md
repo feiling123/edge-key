@@ -35,7 +35,7 @@ BEpusdt 标签页用于对接 Upay Pro V3 加密货币收款网关，支持 USDT
 
 ### 工作模式
 
-本项目的 BEpusdt 适配器按 Upay Pro V3 兼容接口工作，创建订单接口为 `/api/create_order`，需要在支付配置中填写商户 ID、签名密钥和支付币种。
+本项目的 BEpusdt 适配器按 Upay Pro V3 兼容接口工作，创建订单接口为 `/api/create_order`，需要在支付配置中填写商户 ID、签名密钥和一个或多个支付币种。
 
 | 模式 | 接口 | 说明 |
 |------|------|------|
@@ -47,7 +47,8 @@ BEpusdt 标签页用于对接 Upay Pro V3 加密货币收款网关，支持 USDT
 |------|------|
 | `baseUrl` | Upay Pro V3 服务域名，如 `https://pay.example.com`（只填域名，代码自动拼接 API 路径） |
 | `merchantId` | Upay Pro V3 后台商户 ID，默认 `default` |
-| `paymentType` | Upay Pro V3 后台已配置钱包的币种，如 `USDT-TRC20` |
+| `paymentTypes` | Upay Pro V3 后台已配置钱包的币种列表，如 `USDT-TRC20`、`TRX`；前台会按币种分别展示支付入口 |
+| `paymentType` | 默认币种，通常由 `paymentTypes` 的第一个值自动兼容生成 |
 | `appSecret` | Upay Pro V3 商户签名密钥 |
 
 ### 创建订单签名算法

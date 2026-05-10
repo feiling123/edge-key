@@ -11,6 +11,7 @@ export async function onSavePaymentConfig(input: {
   appSecret?: string;
   merchantId?: string;
   paymentType?: string;
+  paymentTypes?: string[];
   pid?: string;
   key?: string;
   notifyUrl?: string;
