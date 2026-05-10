@@ -8,6 +8,7 @@ export function registerSitemapRoutes(app: Hono) {
 
     const staticPages = [
       { loc: `${origin}/`, changefreq: "daily", priority: "1.0" },
+      { loc: `${origin}/products`, changefreq: "daily", priority: "0.9" },
       { loc: `${origin}/blog`, changefreq: "weekly", priority: "0.7" },
       { loc: `${origin}/notice`, changefreq: "weekly", priority: "0.6" },
       { loc: `${origin}/about`, changefreq: "monthly", priority: "0.5" },

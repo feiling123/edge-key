@@ -8,11 +8,11 @@ import { getAdminContext, logAdminOperation } from "../auth/service";
 import { getAdminProductDetail, getProductDetailBySlug, listAdminCategories, listAdminProducts, listHomeCategories, listHomeProducts } from "./queries";
 import { deleteCategoryRecord, deleteProductRecord, updateCategoryStatus, upsertCategoryRecord, upsertProductRecord } from "./repository";
 
-export async function getHomeCatalog(prisma?: PrismaClient) {
+export async function getHomeCatalog(prisma?: PrismaClient, options: { productLimit?: number | null } = {}) {
   const client = prisma ?? getCatalogContext().prisma;
   return {
     categories: await listHomeCategories(client),
-    products: await listHomeProducts(client),
+    products: await listHomeProducts(client, { take: options.productLimit === null ? null : options.productLimit ?? 12 }),
   };
 }
 

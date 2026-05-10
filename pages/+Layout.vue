@@ -115,7 +115,7 @@ const footerHref = computed(() => pageContext.site?.siteUrl || "#");
 const currentPath = computed(() => pageContext.urlPathname || "/");
 const navItems = computed(() => [
   { href: "/", match: "/", label: t("nav.home") },
-  { href: "/#products", match: "/#products", label: t("nav.products") },
+  { href: "/products", match: "/products", label: t("nav.products") },
   { href: "/blog", match: "/blog", label: t("nav.blog") },
   { href: "/notice", match: "/notice", label: t("nav.notice") },
   { href: "/about", match: "/about", label: t("nav.about") },
@@ -139,7 +139,6 @@ const isAdminRoute = computed(() => pageContext.urlPathname?.startsWith("/admin"
 
 function isActive(match: string) {
   if (match === "/") return currentPath.value === "/";
-  if (match === "/#products") return false;
   return currentPath.value.startsWith(match);
 }
 
@@ -147,10 +146,10 @@ function submitSearch() {
   const keyword = searchKeyword.value.trim();
   mobileMenuOpen.value = false;
   if (!keyword) {
-    window.location.href = "/#products";
+    window.location.href = "/products";
     return;
   }
-  window.location.href = `/?q=${encodeURIComponent(keyword)}#products`;
+  window.location.href = `/products?q=${encodeURIComponent(keyword)}`;
 }
 </script>
 

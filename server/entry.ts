@@ -151,6 +151,7 @@ function applyResponseCachePolicy(c: any) {
 function isPublicCdnPage(pathname: string) {
   return (
     pathname === "/" ||
+    pathname === "/products" ||
     pathname === "/blog" ||
     pathname.startsWith("/blog/") ||
     pathname.startsWith("/product/") ||

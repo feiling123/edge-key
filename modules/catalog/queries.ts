@@ -2,7 +2,7 @@ import type { PrismaClient } from "../../generated/prisma/client";
 import { findProductRecordById, listAdminProductRecords, listCategoryRecords, listHomeCategoryRecords } from "./repository";
 import type { AdminProductSummary, CategorySummary, ProductSummary } from "./types";
 
-export async function listHomeProducts(prisma: PrismaClient): Promise<ProductSummary[]> {
+export async function listHomeProducts(prisma: PrismaClient, options: { take?: number | null } = {}): Promise<ProductSummary[]> {
   const records = await prisma.product.findMany({
     where: {
       status: "ACTIVE",
@@ -11,7 +11,7 @@ export async function listHomeProducts(prisma: PrismaClient): Promise<ProductSum
       category: true,
     },
     orderBy: [{ sort: "asc" }, { id: "desc" }],
-    take: 12,
+    ...(options.take === null ? {} : { take: options.take ?? 12 }),
   });
 
   return records.map((item) => ({

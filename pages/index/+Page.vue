@@ -22,7 +22,7 @@
               {{ currentHero.buttonText }}
               <svg viewBox="0 0 20 20" class="ml-2 size-5" aria-hidden="true"><path fill="currentColor" d="M11.78 4.22a.75.75 0 0 0-1.06 1.06l3.97 3.97H4.75a.75.75 0 0 0 0 1.5h9.94l-3.97 3.97a.75.75 0 1 0 1.06 1.06l5.25-5.25a.75.75 0 0 0 0-1.06l-5.25-5.25Z"/></svg>
             </a>
-            <a href="#products" class="inline-flex min-h-12 items-center rounded-2xl border border-white/30 bg-white/10 px-6 py-3 text-base font-bold text-white backdrop-blur transition duration-300 hover:-translate-y-1 hover:bg-white/20">
+            <a href="/products" class="inline-flex min-h-12 items-center rounded-2xl border border-white/30 bg-white/10 px-6 py-3 text-base font-bold text-white backdrop-blur transition duration-300 hover:-translate-y-1 hover:bg-white/20">
               {{ t("home.view_all") }}
             </a>
           </div>
@@ -41,64 +41,8 @@
       </div>
     </section>
 
-    <section id="products" class="border-t border-base-300 pt-8">
-      <div class="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <div class="mb-2 inline-flex size-7 items-center justify-center rounded-lg bg-primary/10 text-sm font-black text-primary">{{ t("home.hot_badge") }}</div>
-          <h2 class="text-3xl font-black tracking-normal">{{ t("home.product_list") }}</h2>
-          <p class="mt-2 text-base-content/60">{{ t("home.product_subtitle") }}</p>
-        </div>
-        <a href="#products" class="hidden text-sm font-bold text-base-content/60 transition hover:scale-105 hover:text-primary sm:inline-flex">{{ t("home.view_all") }}</a>
-      </div>
-
-      <div v-if="catalog.categories.length" class="-mx-4 mb-6 flex gap-2 overflow-x-auto px-4 pb-2">
-        <button
-          class="shrink-0 rounded-full px-4 py-2 text-sm font-bold transition duration-300 hover:scale-105"
-          :class="activeCategoryId === null ? 'bg-primary text-primary-content shadow-sm' : 'bg-base-100 text-base-content/70 hover:bg-primary/10 hover:text-primary'"
-          @click="activeCategoryId = null"
-        >
-          {{ t("home.all_products") }}
-        </button>
-        <button
-          v-for="category in catalog.categories"
-          :key="category.id"
-          class="shrink-0 rounded-full px-4 py-2 text-sm font-bold transition duration-300 hover:scale-105"
-          :class="activeCategoryId === category.id ? 'bg-primary text-primary-content shadow-sm' : 'bg-base-100 text-base-content/70 hover:bg-primary/10 hover:text-primary'"
-          @click="activeCategoryId = category.id"
-        >
-          {{ category.name }}
-        </button>
-      </div>
-
-      <div v-if="filteredProducts.length" class="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-5 xl:grid-cols-4">
-        <article v-for="product in filteredProducts" :key="product.id" class="group overflow-hidden rounded-[20px] border border-base-300 bg-base-100 shadow-sm transition duration-300 hover:-translate-y-1.5 hover:scale-[1.015] hover:shadow-xl">
-          <a :href="`/product/${product.slug}`" class="block">
-            <div class="relative aspect-[4/3] overflow-hidden bg-base-200">
-              <img :src="product.coverImage || emptyCoverUrl" :alt="product.name" class="h-full w-full object-cover transition duration-500 group-hover:scale-110" />
-              <div class="absolute left-3 top-3 rounded-full bg-primary px-2.5 py-1 text-xs font-black text-primary-content shadow-sm">
-                {{ t("home.hot") }}
-              </div>
-              <div v-if="product.categoryName" class="absolute right-3 top-3 max-w-[70%] truncate rounded-full bg-black/55 px-2.5 py-1 text-xs font-bold text-white backdrop-blur">
-                {{ product.categoryName }}
-              </div>
-            </div>
-            <div class="space-y-3 p-4">
-              <h3 class="line-clamp-2 min-h-[2.75rem] text-sm font-black leading-snug md:text-base">{{ product.name }}</h3>
-              <p class="line-clamp-2 min-h-[2.25rem] text-xs leading-relaxed text-base-content/60 md:text-sm">{{ product.subtitle || t("home.default_product_desc") }}</p>
-              <div class="flex items-center justify-between gap-2">
-                <div class="text-lg font-black text-primary md:text-xl">{{ formatCents(product.price) }}</div>
-                <span class="inline-flex size-9 items-center justify-center rounded-full bg-base-200 text-base-content/60 transition group-hover:bg-primary group-hover:text-primary-content">
-                  <svg viewBox="0 0 20 20" class="size-5" aria-hidden="true"><path fill="currentColor" d="M11.78 4.22a.75.75 0 0 0-1.06 1.06l3.97 3.97H4.75a.75.75 0 0 0 0 1.5h9.94l-3.97 3.97a.75.75 0 1 0 1.06 1.06l5.25-5.25a.75.75 0 0 0 0-1.06l-5.25-5.25Z"/></svg>
-                </span>
-              </div>
-            </div>
-          </a>
-        </article>
-      </div>
-
-      <div v-else class="rounded-[22px] border border-dashed border-base-300 bg-base-100 p-10 text-center text-base-content/60">
-        {{ emptyMessage }}
-      </div>
+    <section id="products" class="scroll-mt-28 border-t border-base-300 pt-8">
+      <ProductCatalog :categories="catalog.categories" :products="catalog.products" />
     </section>
 
     <section v-if="latestPosts.length || pageLinks.length" class="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
@@ -138,9 +82,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useData } from "vike-vue/useData";
-import { formatCents } from "../../lib/utils/money";
+import ProductCatalog from "../../components/ProductCatalog.vue";
 import { useI18n } from "../../lib/client-i18n";
-import emptyCoverUrl from "../../assets/empty.jpg";
 import fallbackHeroUrl from "../../assets/home-n.png";
 import type { Data } from "./+data";
 
@@ -155,13 +98,10 @@ interface HeroSlide {
 
 const { site, catalog, blog } = useData<Data>();
 const { locale, t } = useI18n();
-const activeCategoryId = ref<number | null>(null);
-const keyword = ref("");
 const currentHeroIndex = ref(0);
 let heroTimer: number | undefined;
 
 onMounted(() => {
-  keyword.value = new URLSearchParams(window.location.search).get("q")?.trim() || "";
   heroTimer = window.setInterval(() => {
     if (heroSlides.value.length > 1) {
       currentHeroIndex.value = (currentHeroIndex.value + 1) % heroSlides.value.length;
@@ -207,7 +147,7 @@ const heroSlides = computed<HeroSlide[]>(() => {
     title: site.siteName || "edgeKey",
     subtitle: site.siteSubtitle || t("home.hero_subtitle"),
     image: fallbackHeroUrl,
-    href: "#products",
+    href: "/products",
     badge: site.notice || "",
     buttonText: t("home.view_all"),
   }];
@@ -229,15 +169,6 @@ const pageLinks = computed(() => [
       }
     : null,
 ].filter(Boolean) as Array<{ href: string; title: string; description: string }>);
-const filteredProducts = computed(() => {
-  const selected = activeCategoryId.value === null
-    ? catalog.products
-    : catalog.products.filter((product) => product.categoryId === activeCategoryId.value);
-  const q = keyword.value.toLowerCase();
-  if (!q) return selected;
-  return selected.filter((product) => [product.name, product.subtitle, product.categoryName].filter(Boolean).some((value) => String(value).toLowerCase().includes(q)));
-});
-const emptyMessage = computed(() => keyword.value ? t("home.search_empty") : t("home.empty"));
 </script>
 
 <style scoped>
