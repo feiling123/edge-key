@@ -2,6 +2,7 @@ import { getContext } from "telefunc";
 import { pinyin } from "pinyin-pro";
 import type { PrismaClient } from "../../generated/prisma/client";
 import { badRequestError, conflictError, notFoundError } from "../../lib/app-error";
+import { extractFirstImageSrc, plainTextFromHtml } from "../../lib/utils/html";
 import { getAdminContext, logAdminOperation } from "../auth/service";
 import type { BlogCategory, BlogPost } from "./content";
 
@@ -56,15 +57,7 @@ export async function getPublicBlogIndex(prisma?: PrismaClient): Promise<{ categ
       name: { zh: item.nameZh, en: item.nameEn },
       description: { zh: item.descriptionZh ?? "", en: item.descriptionEn ?? "" },
     })),
-    posts: posts.map((item): BlogPost => ({
-      slug: item.slug,
-      categoryId: item.categoryId ? String(item.categoryId) : "",
-      date: toDateInput(item.publishedAt ?? item.createdAt),
-      readMinutes: item.readMinutes,
-      title: { zh: item.titleZh, en: item.titleEn },
-      excerpt: { zh: item.excerptZh ?? "", en: item.excerptEn ?? "" },
-      contentHtml: { zh: item.contentZh, en: item.contentEn },
-    })),
+    posts: posts.map(mapPublicPost),
   };
 }
 
@@ -330,6 +323,22 @@ function mapAdminPost(item: any): AdminBlogPost {
     readMinutes: item.readMinutes,
     publishedAt: toDateInput(item.publishedAt ?? item.createdAt),
     createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : String(item.createdAt),
+  };
+}
+
+function mapPublicPost(item: any): BlogPost {
+  const excerptZh = item.excerptZh?.trim() || plainTextFromHtml(item.contentZh).slice(0, 120);
+  const excerptEn = item.excerptEn?.trim() || plainTextFromHtml(item.contentEn).slice(0, 140) || excerptZh;
+
+  return {
+    slug: item.slug,
+    categoryId: item.categoryId ? String(item.categoryId) : "",
+    date: toDateInput(item.publishedAt ?? item.createdAt),
+    readMinutes: item.readMinutes,
+    coverImage: extractFirstImageSrc(item.contentZh) || extractFirstImageSrc(item.contentEn) || null,
+    title: { zh: item.titleZh, en: item.titleEn },
+    excerpt: { zh: excerptZh, en: excerptEn },
+    contentHtml: { zh: item.contentZh, en: item.contentEn },
   };
 }
 

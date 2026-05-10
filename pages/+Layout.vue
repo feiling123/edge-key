@@ -17,7 +17,7 @@
         </form>
 
         <nav class="ml-auto hidden items-center gap-1 text-sm font-semibold text-base-content/70 lg:flex">
-          <a v-for="item in navItems" :key="item.href" :href="item.href" class="rounded-full px-4 py-2 transition hover:bg-primary/10 hover:text-primary" :class="isActive(item.match) ? 'bg-primary/10 text-primary' : ''">
+          <a v-for="item in navItems" :key="item.href" :href="item.href" class="rounded-full px-4 py-2 transition duration-300 hover:scale-105 hover:bg-primary/10 hover:text-primary" :class="isActive(item.match) ? 'bg-primary/10 text-primary' : ''">
             {{ item.label }}
           </a>
         </nav>
@@ -39,7 +39,7 @@
           <button type="submit" class="rounded-full bg-primary px-4 py-2 text-sm font-bold text-primary-content">{{ t("nav.search") }}</button>
         </form>
         <nav class="mt-3 grid gap-2 text-sm font-semibold">
-          <a v-for="item in mobileNavItems" :key="item.href" :href="item.href" class="rounded-xl px-3 py-3 transition hover:bg-primary/10 hover:text-primary" :class="isActive(item.match) ? 'bg-primary/10 text-primary' : ''" @click="mobileMenuOpen = false">
+          <a v-for="item in mobileNavItems" :key="item.href" :href="item.href" class="rounded-xl px-3 py-3 transition duration-300 hover:scale-[1.01] hover:bg-primary/10 hover:text-primary" :class="isActive(item.match) ? 'bg-primary/10 text-primary' : ''" @click="mobileMenuOpen = false">
             {{ item.label }}
           </a>
         </nav>
@@ -59,36 +59,36 @@
           </div>
           <p v-if="siteSubtitle" class="mt-3 max-w-md leading-relaxed">{{ siteSubtitle }}</p>
           <p class="mt-4">
-          <a :href="footerHref" :target="footerHref === '#' ? undefined : '_blank'">
-            {{ footerText ? footerText : `© ${new Date().getFullYear()} ${siteName}` }}
-          </a>
+            <a :href="footerHref" :target="footerHref === '#' ? undefined : '_blank'">
+              {{ footerText ? footerText : `© ${new Date().getFullYear()} ${siteName}` }}
+            </a>
           </p>
         </div>
         <div>
           <h4 class="font-bold text-base-content">{{ t("nav.links") }}</h4>
-          <div class="mt-3 grid gap-2">
-            <a v-for="item in mobileNavItems" :key="`footer-${item.href}`" :href="item.href" class="hover:text-primary">{{ item.label }}</a>
+          <div class="mt-3 grid max-w-sm grid-cols-2 gap-x-8 gap-y-3">
+            <a v-for="item in mobileNavItems" :key="`footer-${item.href}`" :href="item.href" class="transition hover:translate-x-1 hover:text-primary">{{ item.label }}</a>
           </div>
         </div>
         <div>
           <h4 class="font-bold text-base-content">{{ t("nav.support") }}</h4>
-        <template v-if="supportContactItems.length === 1">
-          <p class="mt-3 flex items-center gap-2 text-sm">
-            <svg class="w-4 h-4 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.079 6.839a3 3 0 0 0-4.255.1M13 20h1.083A3.916 3.916 0 0 0 18 16.083V9A6 6 0 1 0 6 9v7m7 4v-1a1 1 0 0 0-1-1h-1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1Zm-7-4v-6H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h1Zm12-6h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v-6Z"/>
-            </svg>
-            <a v-if="supportContactItems[0].href" :href="supportContactItems[0].href" target="_blank" class="hover:underline">{{ supportContactItems[0].label }}</a>
-            <span v-else>{{ supportContactItems[0].label }}</span>
-          </p>
-        </template>
-        <template v-else-if="supportContactItems.length > 1">
-          <ul class="mt-3 grid gap-2">
-            <li v-for="(item, i) in supportContactItems" :key="i">
-              <a v-if="item.href" :href="item.href" target="_blank" class="hover:text-primary">{{ item.label }}</a>
-              <span v-else>{{ item.label }}</span>
-            </li>
-          </ul>
-        </template>
+          <template v-if="supportContactItems.length === 1">
+            <p class="mt-3 flex items-center gap-2 text-sm">
+              <svg class="w-4 h-4 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.079 6.839a3 3 0 0 0-4.255.1M13 20h1.083A3.916 3.916 0 0 0 18 16.083V9A6 6 0 1 0 6 9v7m7 4v-1a1 1 0 0 0-1-1h-1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1Zm-7-4v-6H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h1Zm12-6h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v-6Z"/>
+              </svg>
+              <a v-if="supportContactItems[0].href" :href="supportContactItems[0].href" target="_blank" class="hover:underline">{{ supportContactItems[0].label }}</a>
+              <span v-else>{{ supportContactItems[0].label }}</span>
+            </p>
+          </template>
+          <template v-else-if="supportContactItems.length > 1">
+            <ul class="mt-3 grid gap-2">
+              <li v-for="(item, i) in supportContactItems" :key="i">
+                <a v-if="item.href" :href="item.href" target="_blank" class="hover:text-primary">{{ item.label }}</a>
+                <span v-else>{{ item.label }}</span>
+              </li>
+            </ul>
+          </template>
           <p v-else class="mt-3">{{ t("nav.no_support") }}</p>
         </div>
       </div>

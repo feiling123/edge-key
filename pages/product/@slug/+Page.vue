@@ -1,29 +1,29 @@
 <template>
   <div v-if="!product" class="alert alert-warning">{{ t("product.missing") }}</div>
-  <div v-else class="grid gap-6 lg:grid-cols-[2fr_1fr]">
-    <section class="card bg-base-100 shadow-sm overflow-hidden">
-      <figure class="w-full bg-base-200">
-        <img :src="product.coverImage || emptyCoverUrl" :alt="product.name" class="w-full object-cover max-h-96" />
+  <div v-else class="grid gap-6 lg:grid-cols-[1.45fr_0.8fr]">
+    <section class="overflow-hidden rounded-[28px] border border-base-300 bg-base-100 shadow-sm">
+      <figure class="group relative w-full overflow-hidden bg-base-200">
+        <img :src="product.coverImage || emptyCoverUrl" :alt="product.name" class="max-h-[460px] w-full object-cover transition duration-500 group-hover:scale-105" />
+        <div class="absolute left-5 top-5 rounded-full bg-primary px-3 py-1 text-xs font-black text-primary-content shadow-sm">{{ t("product.label") }}</div>
       </figure>
-      <div class="card-body space-y-4">
+      <div class="space-y-5 p-6 md:p-8">
         <div>
-          <p class="text-sm uppercase tracking-[0.2em] text-primary">{{ t("product.label") }}</p>
-          <h1 class="text-3xl font-bold">{{ product.name }}</h1>
+          <h1 class="text-3xl font-black leading-tight md:text-5xl">{{ product.name }}</h1>
           <p class="mt-2 text-base-content/70">{{ product.subtitle }}</p>
         </div>
         <div class="prose max-w-none text-base-content/80" v-html="descriptionHtml"></div>
-        <div class="rounded-box bg-base-200 p-4 text-sm text-base-content/80">
+        <div class="rounded-2xl bg-base-200 p-4 text-sm text-base-content/80">
           {{ product.purchaseNote || t("product.default_purchase_note") }}
         </div>
       </div>
     </section>
 
     <aside>
-      <div class="lg:sticky lg:top-24 card bg-base-100 shadow-sm">
-        <div class="card-body space-y-4">
+      <div class="rounded-[28px] border border-base-300 bg-base-100 shadow-sm lg:sticky lg:top-24">
+        <div class="space-y-4 p-6">
           <div>
             <div class="text-sm text-base-content/60">{{ t("product.price") }}</div>
-            <div class="text-3xl font-bold text-primary">{{ formatCents(product.price) }}</div>
+            <div class="text-4xl font-black text-primary">{{ formatCents(product.price) }}</div>
           </div>
           <div class="text-sm text-base-content/70">{{ t("product.limit", { min: product.minBuy, max: product.maxBuy }) }}</div>
 
@@ -48,7 +48,7 @@
           <div class="space-y-2">
             <div class="text-sm font-medium">{{ t("product.payment_method") }}</div>
             <div class="grid gap-3">
-              <label v-for="method in paymentMethods" :key="method.provider" class="rounded-box border border-base-300 p-4">
+              <label v-for="method in paymentMethods" :key="method.provider" class="rounded-2xl border border-base-300 p-4 transition duration-300 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5">
                 <div class="flex items-center justify-between gap-3">
                   <span>{{ method.label }}</span>
                   <input v-model="form.paymentProvider" type="radio" class="radio radio-primary radio-sm" :value="method.provider" />
@@ -60,7 +60,7 @@
           <div v-if="form.paymentProvider === 'EPAY'" class="space-y-2">
             <div class="text-sm font-medium">{{ t("product.epay_channel") }}</div>
             <div class="grid gap-3 md:grid-cols-2">
-              <label v-for="channel in epayChannels" :key="channel.value" class="rounded-box border border-base-300 p-4">
+              <label v-for="channel in epayChannels" :key="channel.value" class="rounded-2xl border border-base-300 p-4 transition duration-300 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5">
                 <div class="flex items-center justify-between gap-3">
                   <span>{{ channel.label() }}</span>
                   <input v-model="form.paymentChannel" type="radio" class="radio radio-primary radio-sm" :value="channel.value" />

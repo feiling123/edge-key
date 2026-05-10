@@ -3,7 +3,7 @@ import migration0001 from "../prisma/migrations/0001_init.sql?raw";
 import migration0002 from "../prisma/migrations/0002_runtime_secret.sql?raw";
 import migration0003 from "../prisma/migrations/0003_site_content_pages.sql?raw";
 
-const bootstrapPromises = new WeakMap<D1Database, Promise<void>>();
+const bootstrappedDatabases = new WeakSet<D1Database>();
 const migrationTable = "__edgekey_runtime_migrations";
 
 const migrations = [
@@ -12,16 +12,10 @@ const migrations = [
   { id: "0003_site_content_pages", sql: toIdempotentSql(migration0003) },
 ];
 
-export function ensureD1Ready(database: D1Database) {
-  const pending = bootstrapPromises.get(database);
-  if (pending) return pending;
-
-  const promise = bootstrapD1(database).catch((error) => {
-    bootstrapPromises.delete(database);
-    throw error;
-  });
-  bootstrapPromises.set(database, promise);
-  return promise;
+export async function ensureD1Ready(database: D1Database) {
+  if (bootstrappedDatabases.has(database)) return;
+  await bootstrapD1(database);
+  bootstrappedDatabases.add(database);
 }
 
 async function bootstrapD1(database: D1Database) {

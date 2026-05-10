@@ -11,6 +11,7 @@ export interface BlogPost {
   categoryId: string;
   date: string;
   readMinutes: number;
+  coverImage?: string | null;
   title: Record<BlogLocale, string>;
   excerpt: Record<BlogLocale, string>;
   contentHtml: Record<BlogLocale, string>;

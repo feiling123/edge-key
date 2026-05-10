@@ -11,6 +11,8 @@ import { apply, serve } from "@photonjs/hono";
 import { Hono } from "hono";
 
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PUBLIC_PAGE_CACHE_CONTROL = "public, max-age=60, s-maxage=300, stale-while-revalidate=600";
+const SENSITIVE_CACHE_CONTROL = "no-store, max-age=0";
 
 /**
  * 创建并配置 Hono 应用实例。
@@ -41,6 +43,7 @@ export function createApp() {
     });
 
     c.header("x-request-id", requestContext.requestId);
+    applyResponseCachePolicy(c);
   });
 
   app.use("*", async (c, next) => {
@@ -120,3 +123,56 @@ const entry = serve(createApp(), { port }) as unknown as Record<string, unknown>
 entry.scheduled = scheduled;
 export default entry;
 export { scheduled };
+
+function applyResponseCachePolicy(c: any) {
+  const url = new URL(c.req.url);
+  const pathname = url.pathname;
+  const method = c.req.raw.method.toUpperCase();
+  const response = c.res as Response | undefined;
+  const adminBase = adminPublicPath(c.env as { ADMIN_PATH?: string } | undefined);
+
+  if (!response || response.status !== 200) return;
+
+  if (isSensitivePath(pathname, adminBase)) {
+    response.headers.set("Cache-Control", SENSITIVE_CACHE_CONTROL);
+    return;
+  }
+
+  if (method !== "GET" && method !== "HEAD") return;
+  if (!isPublicCdnPage(pathname)) return;
+  if (c.req.header("cookie") || c.req.header("authorization")) return;
+  if (response.headers.has("set-cookie")) return;
+
+  response.headers.set("Cache-Control", PUBLIC_PAGE_CACHE_CONTROL);
+  response.headers.set("CDN-Cache-Control", PUBLIC_PAGE_CACHE_CONTROL);
+  response.headers.set("Vary", mergeVaryHeader(response.headers.get("Vary"), "Accept-Encoding"));
+}
+
+function isPublicCdnPage(pathname: string) {
+  return (
+    pathname === "/" ||
+    pathname === "/blog" ||
+    pathname.startsWith("/blog/") ||
+    pathname.startsWith("/product/") ||
+    pathname === "/notice" ||
+    pathname === "/about"
+  );
+}
+
+function isSensitivePath(pathname: string, adminBase: string) {
+  return (
+    isAdminPath(pathname, adminBase) ||
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/_telefunc") ||
+    pathname.startsWith("/auth/") ||
+    pathname.startsWith("/order/") ||
+    pathname === "/query"
+  );
+}
+
+function mergeVaryHeader(current: string | null, value: string) {
+  if (!current) return value;
+  const parts = new Set(current.split(",").map((part) => part.trim()).filter(Boolean));
+  parts.add(value);
+  return [...parts].join(", ");
+}
