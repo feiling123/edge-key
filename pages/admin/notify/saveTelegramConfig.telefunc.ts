@@ -14,6 +14,8 @@ type SaveTelegramConfigInput = {
   notifyOrderPaid?: boolean;
   notifyDeliverySuccess?: boolean;
   notifyDeliveryFailed?: boolean;
+  notifyOrderDeleted?: boolean;
+  notifyAdminLogin?: boolean;
 };
 
 export async function onSaveTelegramConfig(input: SaveTelegramConfigInput) {
@@ -34,6 +36,8 @@ export async function onSaveTelegramPushSettings(input: {
   notifyOrderPaid: boolean;
   notifyDeliverySuccess: boolean;
   notifyDeliveryFailed: boolean;
+  notifyOrderDeleted: boolean;
+  notifyAdminLogin: boolean;
 }) {
   return runNotifyTelefunc(async () => {
     assertAdminAccess();

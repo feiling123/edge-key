@@ -16,6 +16,8 @@ export async function data(pageContext: {
         notifyOrderPaid: false,
         notifyDeliverySuccess: false,
         notifyDeliveryFailed: false,
+        notifyOrderDeleted: false,
+        notifyAdminLogin: false,
       },
     };
   }

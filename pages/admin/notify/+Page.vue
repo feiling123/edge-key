@@ -33,7 +33,7 @@
             <h2 class="text-xl font-semibold">{{ l("消息推送设置", "Notification Settings") }}</h2>
             <p class="text-sm text-base-content/70">{{ l("这些开关会同步到所有 Telegram Bot 配置。", "These toggles are synced to every Telegram Bot config.") }}</p>
           </div>
-          <div class="grid gap-4 md:grid-cols-3">
+          <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <label class="label cursor-pointer justify-start gap-3">
               <input v-model="pushSettings.notifyOrderPaid" type="checkbox" class="checkbox checkbox-primary checkbox-sm" />
               <span class="label-text font-medium">{{ l("收款成功通知", "Payment success") }}</span>
@@ -45,6 +45,14 @@
             <label class="label cursor-pointer justify-start gap-3">
               <input v-model="pushSettings.notifyDeliveryFailed" type="checkbox" class="checkbox checkbox-primary checkbox-sm" />
               <span class="label-text font-medium">{{ l("发货失败告警", "Delivery failure alert") }}</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3">
+              <input v-model="pushSettings.notifyOrderDeleted" type="checkbox" class="checkbox checkbox-primary checkbox-sm" />
+              <span class="label-text font-medium">{{ l("删除订单日志", "Order deletion log") }}</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3">
+              <input v-model="pushSettings.notifyAdminLogin" type="checkbox" class="checkbox checkbox-primary checkbox-sm" />
+              <span class="label-text font-medium">{{ l("后台登录日志", "Admin login log") }}</span>
             </label>
           </div>
           <div class="flex flex-wrap items-center gap-3">
@@ -282,7 +290,7 @@ import { onSaveTelegramConfig, onDeleteTelegramConfig, onSaveTelegramPushSetting
 import { onSaveTelegramTemplate } from "./saveTelegramTemplate.telefunc";
 import { onSendTestTelegram } from "./sendTestTelegram.telefunc";
 
-type TelegramScene = "TEST" | "ORDER_PAID" | "DELIVERY_SUCCESS" | "DELIVERY_FAILED";
+type TelegramScene = "TEST" | "ORDER_PAID" | "DELIVERY_SUCCESS" | "DELIVERY_FAILED" | "ORDER_DELETED" | "ADMIN_LOGIN";
 type TelegramParseMode = "NONE" | "HTML" | "MARKDOWN_V2";
 
 type TelegramConfigItem = {
@@ -296,6 +304,8 @@ type TelegramConfigItem = {
   notifyOrderPaid: boolean;
   notifyDeliverySuccess: boolean;
   notifyDeliveryFailed: boolean;
+  notifyOrderDeleted: boolean;
+  notifyAdminLogin: boolean;
 };
 
 type TelegramTemplateItem = {
@@ -321,6 +331,8 @@ type PushSettings = {
   notifyOrderPaid: boolean;
   notifyDeliverySuccess: boolean;
   notifyDeliveryFailed: boolean;
+  notifyOrderDeleted: boolean;
+  notifyAdminLogin: boolean;
 };
 
 const pageContext = usePageContext();
@@ -340,6 +352,8 @@ const pushSettings = reactive<PushSettings>({
   notifyOrderPaid: pageData.pushSettings?.notifyOrderPaid ?? true,
   notifyDeliverySuccess: pageData.pushSettings?.notifyDeliverySuccess ?? true,
   notifyDeliveryFailed: pageData.pushSettings?.notifyDeliveryFailed ?? true,
+  notifyOrderDeleted: pageData.pushSettings?.notifyOrderDeleted ?? false,
+  notifyAdminLogin: pageData.pushSettings?.notifyAdminLogin ?? false,
 });
 
 const metricItems = computed(() => [
@@ -350,8 +364,8 @@ const metricItems = computed(() => [
 ]);
 const variableHelpText = computed(() =>
   l(
-    "变量：{{siteName}} {{orderNo}} {{productName}} {{amount}} {{quantity}} {{deliveryItems}} {{errorMessage}} {{queryUrl}} {{sentAt}} {{customContent}}",
-    "Variables: {{siteName}} {{orderNo}} {{productName}} {{amount}} {{quantity}} {{deliveryItems}} {{errorMessage}} {{queryUrl}} {{sentAt}} {{customContent}}",
+    "变量：{{siteName}} {{siteUrl}} {{orderNo}} {{productName}} {{amount}} {{quantity}} {{deliveryItems}} {{errorMessage}} {{queryUrl}} {{sentAt}} {{customContent}} {{clientIp}} {{username}}",
+    "Variables: {{siteName}} {{siteUrl}} {{orderNo}} {{productName}} {{amount}} {{quantity}} {{deliveryItems}} {{errorMessage}} {{queryUrl}} {{sentAt}} {{customContent}} {{clientIp}} {{username}}",
   )
 );
 
@@ -401,6 +415,8 @@ function emptyConfigForm(): TelegramConfigItem {
     notifyOrderPaid: pushSettings?.notifyOrderPaid ?? true,
     notifyDeliverySuccess: pushSettings?.notifyDeliverySuccess ?? true,
     notifyDeliveryFailed: pushSettings?.notifyDeliveryFailed ?? true,
+    notifyOrderDeleted: pushSettings?.notifyOrderDeleted ?? false,
+    notifyAdminLogin: pushSettings?.notifyAdminLogin ?? false,
   };
 }
 
@@ -415,6 +431,8 @@ function assignConfigForm(value: TelegramConfigItem) {
     notifyOrderPaid: value.notifyOrderPaid,
     notifyDeliverySuccess: value.notifyDeliverySuccess,
     notifyDeliveryFailed: value.notifyDeliveryFailed,
+    notifyOrderDeleted: value.notifyOrderDeleted,
+    notifyAdminLogin: value.notifyAdminLogin,
   });
 }
 
@@ -450,6 +468,8 @@ async function handleSaveConfig() {
       notifyOrderPaid: pushSettings.notifyOrderPaid,
       notifyDeliverySuccess: pushSettings.notifyDeliverySuccess,
       notifyDeliveryFailed: pushSettings.notifyDeliveryFailed,
+      notifyOrderDeleted: pushSettings.notifyOrderDeleted,
+      notifyAdminLogin: pushSettings.notifyAdminLogin,
     };
     const result = await onSaveTelegramConfig(payload) as TelegramConfigItem;
     if (result.isEnabled) {
@@ -482,6 +502,8 @@ async function handleSavePushSettings() {
       item.notifyOrderPaid = result.notifyOrderPaid;
       item.notifyDeliverySuccess = result.notifyDeliverySuccess;
       item.notifyDeliveryFailed = result.notifyDeliveryFailed;
+      item.notifyOrderDeleted = result.notifyOrderDeleted;
+      item.notifyAdminLogin = result.notifyAdminLogin;
     }
     pushSettingsMessage.value = l("已保存", "Saved");
   } catch (error) {
@@ -609,6 +631,8 @@ function getSceneLabel(scene: TelegramScene) {
     ORDER_PAID: l("收款成功", "Payment Success"),
     DELIVERY_SUCCESS: l("发货成功", "Delivery Success"),
     DELIVERY_FAILED: l("发货失败", "Delivery Failure"),
+    ORDER_DELETED: l("删除订单", "Order Deleted"),
+    ADMIN_LOGIN: l("后台登录", "Admin Login"),
   } as Record<TelegramScene, string>)[scene] || scene;
 }
 

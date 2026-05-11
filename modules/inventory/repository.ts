@@ -98,7 +98,7 @@ export function listCardRecordsPaged(
 
 export function deleteCardById(prisma: PrismaClient, id: number) {
   return prisma.card.deleteMany({
-    where: { id, status: "UNUSED", orderId: null },
+    where: { id, status: { not: "LOCKED" } },
   });
 }
 
@@ -106,8 +106,7 @@ export function deleteCardsByIds(prisma: PrismaClient, ids: number[]) {
   return prisma.card.deleteMany({
     where: {
       id: { in: ids },
-      status: "UNUSED",
-      orderId: null,
+      status: { not: "LOCKED" },
     },
   });
 }
@@ -124,8 +123,7 @@ export function updateUnusedCardById(
   return prisma.card.updateMany({
     where: {
       id,
-      status: "UNUSED",
-      orderId: null,
+      status: { not: "LOCKED" },
     },
     data: {
       productId: input.productId,
@@ -139,5 +137,25 @@ export function findCardById(prisma: PrismaClient, id: number) {
   return prisma.card.findUnique({
     where: { id },
     include: { product: true },
+  });
+}
+
+export function findCardsByIds(prisma: PrismaClient, ids: number[]) {
+  return prisma.card.findMany({
+    where: {
+      id: { in: ids },
+    },
+    include: { product: true },
+  });
+}
+
+export function findCardsByOrderIds(prisma: PrismaClient, orderIds: number[]) {
+  return prisma.card.findMany({
+    where: {
+      orderId: { in: orderIds },
+    },
+    select: {
+      id: true,
+    },
   });
 }

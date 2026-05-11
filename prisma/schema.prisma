@@ -55,6 +55,8 @@ enum TelegramScene {
   ORDER_PAID
   DELIVERY_SUCCESS
   DELIVERY_FAILED
+  ORDER_DELETED
+  ADMIN_LOGIN
 }
 
 enum TelegramSendStatus {
@@ -183,20 +185,22 @@ model Product {
 }
 
 model Card {
-  id        Int        @id @default(autoincrement())
-  productId Int
-  content   String
-  status    CardStatus @default(UNUSED)
-  batchNo   String?
-  orderId   Int?
-  soldAt    DateTime?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  product   Product    @relation(fields: [productId], references: [id])
-  order     Order?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  id                Int        @id @default(autoincrement())
+  productId         Int
+  content           String
+  status            CardStatus @default(UNUSED)
+  batchNo           String?
+  orderId           Int?
+  deliveryLockToken String?
+  soldAt            DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  product           Product    @relation(fields: [productId], references: [id])
+  order             Order?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([productId, status])
   @@index([orderId])
+  @@index([deliveryLockToken])
 }
 
 model Order {
@@ -217,6 +221,8 @@ model Order {
   status              OrderStatus     @default(PENDING)
   paymentStatus       PaymentStatus   @default(UNPAID)
   deliveryStatus      DeliveryStatus  @default(NOT_DELIVERED)
+  deliveryLockToken   String?
+  deliveryLockedAt    DateTime?
   paidAt              DateTime?
   deliveredAt         DateTime?
   closedAt            DateTime?
@@ -232,6 +238,7 @@ model Order {
   @@index([status, createdAt])
   @@index([paymentStatus, createdAt])
   @@index([deliveryStatus, createdAt])
+  @@index([deliveryLockToken])
 }
 
 model OrderDelivery {
@@ -286,6 +293,8 @@ model TelegramConfig {
   notifyOrderPaid       Boolean       @default(true)
   notifyDeliverySuccess Boolean       @default(true)
   notifyDeliveryFailed  Boolean       @default(true)
+  notifyOrderDeleted    Boolean       @default(false)
+  notifyAdminLogin      Boolean       @default(false)
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   logs                  TelegramLog[]

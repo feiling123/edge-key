@@ -32,6 +32,8 @@ export function createTelegramConfigRecord(
     notifyOrderPaid: boolean;
     notifyDeliverySuccess: boolean;
     notifyDeliveryFailed: boolean;
+    notifyOrderDeleted: boolean;
+    notifyAdminLogin: boolean;
   },
 ) {
   return prisma.telegramConfig.create({
@@ -55,6 +57,8 @@ export function updateTelegramConfigRecord(
     notifyOrderPaid: boolean;
     notifyDeliverySuccess: boolean;
     notifyDeliveryFailed: boolean;
+    notifyOrderDeleted: boolean;
+    notifyAdminLogin: boolean;
   }>,
 ) {
   return prisma.telegramConfig.update({
@@ -97,6 +101,8 @@ export async function updatePushFlagsForAllConfigs(
     notifyOrderPaid: boolean;
     notifyDeliverySuccess: boolean;
     notifyDeliveryFailed: boolean;
+    notifyOrderDeleted: boolean;
+    notifyAdminLogin: boolean;
   },
 ) {
   await prisma.telegramConfig.updateMany({

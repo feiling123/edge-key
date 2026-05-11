@@ -1,14 +1,6 @@
 <template>
   <section class="grid gap-6 lg:grid-cols-[280px_1fr]">
     <aside class="space-y-4 lg:sticky lg:top-24 lg:self-start">
-      <form class="rounded-[22px] border border-base-300 bg-base-100 p-4 shadow-sm" @submit.prevent>
-        <label class="text-sm font-black text-base-content/60">{{ t("home.search_title") }}</label>
-        <div class="mt-3 flex h-12 items-center rounded-2xl border border-base-300 bg-base-200 px-3">
-          <svg viewBox="0 0 20 20" class="size-5 shrink-0 text-base-content/40" aria-hidden="true"><path fill="currentColor" d="M8.5 3a5.5 5.5 0 0 1 4.383 8.823l3.147 3.147a.75.75 0 1 1-1.06 1.06l-3.147-3.147A5.5 5.5 0 1 1 8.5 3Zm0 1.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/></svg>
-          <input v-model="keyword" class="min-w-0 flex-1 bg-transparent px-2 text-sm outline-none" :placeholder="t('nav.search_placeholder')" />
-        </div>
-      </form>
-
       <div class="rounded-[22px] border border-base-300 bg-base-100 p-4 shadow-sm">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-black text-base-content/60">{{ t("home.category_title") }}</h2>
@@ -47,7 +39,6 @@
       <div class="mb-5 flex flex-col gap-4 rounded-[22px] border border-base-300 bg-base-100 p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
           <h2 class="text-2xl font-black md:text-3xl">{{ t("home.product_list") }}</h2>
-          <p class="mt-1 text-sm text-base-content/60">{{ t("home.product_subtitle") }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button

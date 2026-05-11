@@ -8,10 +8,10 @@
             <p class="text-sm uppercase tracking-[0.2em] text-primary">{{ t("order.label") }}</p>
             <h1 class="text-2xl font-bold">{{ order.orderNo }}</h1>
           </div>
-          <div class="flex gap-2">
-            <StatusTag :type="getOrderStatusType(order.status)">{{ orderStatusLabel(order.status) }}</StatusTag>
+          <div class="flex flex-wrap justify-end gap-2">
             <StatusTag :type="getPaymentStatusType(order.paymentStatus)">{{ paymentStatusLabel(order.paymentStatus) }}</StatusTag>
-            <StatusTag :type="getDeliveryStatusType(order.deliveryStatus)">{{ deliveryStatusLabel(order.deliveryStatus) }}</StatusTag>
+            <StatusTag v-if="order.paymentStatus === 'PAID' && order.deliveryStatus !== 'NOT_DELIVERED'" :type="getDeliveryStatusType(order.deliveryStatus)">{{ deliveryStatusLabel(order.deliveryStatus) }}</StatusTag>
+            <StatusTag v-if="order.paymentStatus !== 'PAID'" :type="getOrderStatusType(order.status)">{{ orderStatusLabel(order.status) }}</StatusTag>
           </div>
         </div>
       </div>
@@ -41,7 +41,7 @@
           <div v-if="order.deliveryContents.length" class="space-y-2">
             <pre v-for="content in order.deliveryContents" :key="content" class="rounded-box bg-base-200 p-3 text-sm">{{ content }}</pre>
           </div>
-          <p v-else class="text-sm text-base-content/60">{{ t("order.delivery_empty") }}</p>
+          <p v-else class="text-sm text-base-content/60">{{ deliveryEmptyText }}</p>
         </div>
       </article>
     </section>
@@ -50,7 +50,7 @@
 
 <script setup lang="ts">
 import { normalizeTelefuncError } from "../../../lib/app-error";
-import { onBeforeUnmount, ref, onMounted } from "vue";
+import { computed, onBeforeUnmount, ref, onMounted } from "vue";
 import AppButton from "../../../components/AppButton.vue";
 import { useData } from "vike-vue/useData";
 import { formatCents } from "../../../lib/utils/money";
@@ -111,8 +111,17 @@ async function handleContinuePay() {
 }
 
 function shouldPoll(current: Data["order"]) {
-  return Boolean(current && (current.paymentStatus !== "PAID" || current.deliveryStatus === "NOT_DELIVERED"));
+  if (!current || current.deliveryStatus === "DELIVERED") return false;
+  if (current.paymentStatus === "PAID") return true;
+  return current.paymentStatus === "UNPAID" && current.status !== "CLOSED";
 }
+
+const deliveryEmptyText = computed(() => {
+  if (!order.value) return t("order.delivery_empty");
+  if (order.value.paymentStatus === "PAID" && order.value.deliveryStatus === "FAILED") return t("order.delivery_failed_empty");
+  if (order.value.paymentStatus === "PAID") return t("order.delivery_pending_empty");
+  return t("order.delivery_empty");
+});
 
 function stopStatusPolling() {
   if (pollTimer) window.clearTimeout(pollTimer);

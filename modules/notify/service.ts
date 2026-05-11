@@ -34,12 +34,14 @@ type TelegramConfigRecord = Awaited<ReturnType<typeof listTelegramConfigRecords>
 type TelegramTemplateRecord = Awaited<ReturnType<typeof listTelegramTemplateRecords>>[number];
 type TelegramLogRecord = Awaited<ReturnType<typeof listTelegramLogRecords>>[number];
 
-const telegramScenes = ["TEST", "ORDER_PAID", "DELIVERY_SUCCESS", "DELIVERY_FAILED"] as const;
+const telegramScenes = ["TEST", "ORDER_PAID", "DELIVERY_SUCCESS", "DELIVERY_FAILED", "ORDER_DELETED", "ADMIN_LOGIN"] as const;
 
 const defaultPushSettings: TelegramPushSettings = {
   notifyOrderPaid: true,
   notifyDeliverySuccess: true,
   notifyDeliveryFailed: true,
+  notifyOrderDeleted: false,
+  notifyAdminLogin: false,
 };
 
 const defaultTemplates: Record<TelegramScene, TelegramTemplateValue> = {
@@ -67,6 +69,18 @@ const defaultTemplates: Record<TelegramScene, TelegramTemplateValue> = {
     content: "发货失败告警\n\n订单号：{{orderNo}}\n商品：{{productName}}\n失败原因：{{errorMessage}}\n查询地址：{{queryUrl}}",
     isEnabled: true,
   },
+  ORDER_DELETED: {
+    scene: "ORDER_DELETED",
+    name: "删除订单日志",
+    content: "删除订单日志\n\n网站：{{siteUrl}}\n订单号：{{orderNo}}\n客户端 IP：{{clientIp}}\n操作时间：{{sentAt}}",
+    isEnabled: true,
+  },
+  ADMIN_LOGIN: {
+    scene: "ADMIN_LOGIN",
+    name: "后台登录日志",
+    content: "后台登录日志\n\n网站：{{siteUrl}}\n用户名：{{username}}\n客户端 IP：{{clientIp}}\n登录时间：{{sentAt}}",
+    isEnabled: true,
+  },
 };
 
 function getNotifyContext() {
@@ -85,6 +99,8 @@ function normalizeTelegramConfig(record: TelegramConfigRecord): TelegramConfigVa
     notifyOrderPaid: record.notifyOrderPaid,
     notifyDeliverySuccess: record.notifyDeliverySuccess,
     notifyDeliveryFailed: record.notifyDeliveryFailed,
+    notifyOrderDeleted: record.notifyOrderDeleted,
+    notifyAdminLogin: record.notifyAdminLogin,
     createdAt: toIsoString(record.createdAt),
     updatedAt: toIsoString(record.updatedAt),
   };
@@ -138,6 +154,8 @@ function getGlobalPushSettings(configs: TelegramConfigValue[]): TelegramPushSett
     notifyOrderPaid: active.notifyOrderPaid,
     notifyDeliverySuccess: active.notifyDeliverySuccess,
     notifyDeliveryFailed: active.notifyDeliveryFailed,
+    notifyOrderDeleted: active.notifyOrderDeleted,
+    notifyAdminLogin: active.notifyAdminLogin,
   };
 }
 
@@ -146,6 +164,7 @@ async function getTelegramBaseValues(prisma: PrismaClient) {
   const baseOrigin = site.siteUrl?.trim().replace(/\/+$/, "") || "";
   return {
     siteName: site.siteName,
+    siteUrl: baseOrigin,
     footerText: site.footerText || "",
     supportContact: site.supportContact ? `客服联系方式：${site.supportContact}` : "",
     baseOrigin,
@@ -217,6 +236,7 @@ async function sendSceneTelegram(prisma: PrismaClient, input: {
   const baseValues = await getTelegramBaseValues(prisma);
   const text = renderTemplate(template.content, {
     siteName: baseValues.siteName,
+    siteUrl: baseValues.siteUrl,
     footerText: baseValues.footerText,
     supportContact: baseValues.supportContact,
     sentAt: new Date().toISOString(),
@@ -319,6 +339,8 @@ export async function saveTelegramPushSettings(input: TelegramPushSettings) {
     notifyOrderPaid: Boolean(input.notifyOrderPaid),
     notifyDeliverySuccess: Boolean(input.notifyDeliverySuccess),
     notifyDeliveryFailed: Boolean(input.notifyDeliveryFailed),
+    notifyOrderDeleted: Boolean(input.notifyOrderDeleted),
+    notifyAdminLogin: Boolean(input.notifyAdminLogin),
   };
 
   await updatePushFlagsForAllConfigs(context.prisma, flags);
@@ -363,6 +385,8 @@ export async function saveTelegramConfig(input: TelegramConfigValue) {
     notifyOrderPaid: validated.notifyOrderPaid,
     notifyDeliverySuccess: validated.notifyDeliverySuccess,
     notifyDeliveryFailed: validated.notifyDeliveryFailed,
+    notifyOrderDeleted: validated.notifyOrderDeleted,
+    notifyAdminLogin: validated.notifyAdminLogin,
   };
 
   if (shouldEnable) {
@@ -561,6 +585,53 @@ export async function notifyDeliveryFailed(input: {
       productName: input.productName,
       errorMessage: input.errorMessage,
       queryUrl: getQueryUrl(baseValues.baseOrigin, input.orderNo, input.queryToken),
+    },
+  });
+}
+
+export async function notifyOrderDeleted(input: {
+  prisma?: PrismaClient;
+  orderNo: string;
+  clientIp?: string;
+  siteUrl?: string;
+  triggeredBy?: string;
+}) {
+  const prisma = input.prisma ?? getNotifyContext().prisma;
+  const config = await getOptionalActiveTelegramConfig(prisma, "telegram.notify_order_deleted.config_failed");
+  if (!config || !config.notifyOrderDeleted) return { skipped: true };
+
+  const baseValues = await getTelegramBaseValues(prisma);
+  return sendSceneTelegram(prisma, {
+    scene: "ORDER_DELETED",
+    config,
+    triggeredBy: input.triggeredBy || "admin_order_delete",
+    values: {
+      siteUrl: input.siteUrl?.trim() || baseValues.siteUrl || "-",
+      orderNo: input.orderNo,
+      clientIp: input.clientIp?.trim() || "unknown",
+    },
+  });
+}
+
+export async function notifyAdminLogin(input: {
+  prisma?: PrismaClient;
+  username?: string;
+  clientIp?: string;
+  siteUrl?: string;
+}) {
+  const prisma = input.prisma ?? getNotifyContext().prisma;
+  const config = await getOptionalActiveTelegramConfig(prisma, "telegram.notify_admin_login.config_failed");
+  if (!config || !config.notifyAdminLogin) return { skipped: true };
+
+  const baseValues = await getTelegramBaseValues(prisma);
+  return sendSceneTelegram(prisma, {
+    scene: "ADMIN_LOGIN",
+    config,
+    triggeredBy: "admin_login",
+    values: {
+      siteUrl: input.siteUrl?.trim() || baseValues.siteUrl || "-",
+      username: input.username?.trim() || "admin",
+      clientIp: input.clientIp?.trim() || "unknown",
     },
   });
 }

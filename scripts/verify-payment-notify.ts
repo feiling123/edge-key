@@ -18,6 +18,43 @@ function signBepusdt(payload: Record<string, string | number>, secret: string) {
   return createHash("md5").update(`${base}${secret}`).digest("hex");
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function matchesValue(actual: unknown, expected: unknown): boolean {
+  if (isObject(expected)) {
+    if ("in" in expected) {
+      const values = expected.in as unknown[];
+      return values.includes(actual);
+    }
+    if ("notIn" in expected) {
+      const values = expected.notIn as unknown[];
+      return !values.includes(actual);
+    }
+    if ("not" in expected) {
+      return actual !== expected.not;
+    }
+    if ("lt" in expected) {
+      const expectedTime = new Date(expected.lt as string | Date).getTime();
+      const actualTime = actual ? new Date(actual as string | Date).getTime() : Number.NaN;
+      return Number.isFinite(actualTime) && actualTime < expectedTime;
+    }
+  }
+
+  return actual === expected;
+}
+
+function matchesWhere(item: Record<string, unknown>, where: Record<string, unknown> = {}) {
+  return Object.entries(where).every(([key, expected]) => {
+    if (key === "OR") {
+      return (expected as Array<Record<string, unknown>>).some((condition) => matchesWhere(item, condition));
+    }
+
+    return matchesValue(item[key], expected);
+  });
+}
+
 function createMockPrisma() {
   const state = {
     order: {
@@ -36,6 +73,8 @@ function createMockPrisma() {
       paymentOrderNo: null,
       paidAt: null,
       deliveredAt: null,
+      deliveryLockToken: null,
+      deliveryLockedAt: null,
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
     },
     cards: [
@@ -46,6 +85,7 @@ function createMockPrisma() {
         status: "UNUSED",
         orderId: null,
         soldAt: null,
+        deliveryLockToken: null,
       },
     ],
     paymentConfigs: [
@@ -119,11 +159,7 @@ function createMockPrisma() {
         return { ...state.order };
       },
       async updateMany({ where, data }: any) {
-        const matchesOrderNo = !where.orderNo || where.orderNo === state.order.orderNo;
-        const matchesPaymentStatus = !where.paymentStatus || where.paymentStatus === state.order.paymentStatus;
-        const matchesDeliveryStatus = !where.deliveryStatus || where.deliveryStatus === state.order.deliveryStatus;
-
-        if (!matchesOrderNo || !matchesPaymentStatus || !matchesDeliveryStatus) {
+        if (!matchesWhere(state.order as any, where)) {
           return { count: 0 };
         }
 
@@ -134,7 +170,7 @@ function createMockPrisma() {
     card: {
       async findMany({ where, take }: any) {
         return state.cards
-          .filter((item) => item.productId === where.productId && item.status === where.status && (where.orderId === undefined || item.orderId === where.orderId))
+          .filter((item) => matchesWhere(item as any, where))
           .slice(0, take)
           .map((item) => ({ ...item }));
       },
@@ -146,19 +182,28 @@ function createMockPrisma() {
         return { ...existingCard };
       },
       async updateMany({ where, data }: any) {
-        const card = state.cards.find((item) => {
-          const matchesId = where.id === undefined || item.id === where.id;
-          const matchesStatus = where.status === undefined || item.status === where.status;
-          const matchesOrderId = where.orderId === undefined || item.orderId === where.orderId;
-          return matchesId && matchesStatus && matchesOrderId;
-        });
-
-        if (!card) return { count: 0 };
-        Object.assign(card, data);
-        return { count: 1 };
+        let count = 0;
+        for (const card of state.cards) {
+          if (!matchesWhere(card as any, where)) continue;
+          Object.assign(card, data);
+          count += 1;
+        }
+        return { count };
       },
     },
     orderDelivery: {
+      async findFirst({ where, orderBy }: any) {
+        const items = state.deliveries.filter((item) => matchesWhere(item, where));
+        if (orderBy?.[0]?.id === "asc") {
+          items.sort((left, right) => left.id - right.id);
+        }
+        return items[0] ? { ...items[0] } : null;
+      },
+      async deleteMany({ where }: any) {
+        const before = state.deliveries.length;
+        state.deliveries = state.deliveries.filter((item) => !matchesWhere(item, where));
+        return { count: before - state.deliveries.length };
+      },
       async create({ data }: any) {
         const record = { id: state.deliveries.length + 1, ...data };
         state.deliveries.push(record);

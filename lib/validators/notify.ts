@@ -1,6 +1,6 @@
 import { badRequestError } from "../app-error";
 
-const telegramScenes = ["TEST", "ORDER_PAID", "DELIVERY_SUCCESS", "DELIVERY_FAILED"] as const;
+const telegramScenes = ["TEST", "ORDER_PAID", "DELIVERY_SUCCESS", "DELIVERY_FAILED", "ORDER_DELETED", "ADMIN_LOGIN"] as const;
 const telegramParseModes = ["NONE", "HTML", "MARKDOWN_V2"] as const;
 
 function normalizeTelegramToken(value: unknown) {
@@ -59,6 +59,8 @@ export function validateTelegramConfigInput(input: any) {
     notifyOrderPaid: input.notifyOrderPaid !== false,
     notifyDeliverySuccess: input.notifyDeliverySuccess !== false,
     notifyDeliveryFailed: input.notifyDeliveryFailed !== false,
+    notifyOrderDeleted: Boolean(input.notifyOrderDeleted),
+    notifyAdminLogin: Boolean(input.notifyAdminLogin),
   };
 }
 

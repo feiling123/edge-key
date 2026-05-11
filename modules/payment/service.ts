@@ -434,7 +434,19 @@ export async function queryAlipayPayment(orderNo: string, prisma?: PrismaClient)
   const client = prisma ?? getPaymentContext().prisma;
   const order = await findOrderRecord(client, orderNo);
   if (!order) throw notFoundError("订单不存在", "ORDER_NOT_FOUND");
-  if (order.paymentStatus === "PAID") return { alreadyPaid: true };
+  if (order.paymentStatus === "PAID") {
+    if (order.deliveryStatus !== "DELIVERED") {
+      try {
+        await deliverOrder(client, orderNo);
+      } catch (error) {
+        logger.error(error instanceof Error ? error : String(error), {
+          event: "payment.query_paid_delivery_recovery.failed",
+          orderNo,
+        });
+      }
+    }
+    return { alreadyPaid: true };
+  }
 
   const configs = await getPaymentConfigs(client);
   const config = configs["ALIPAY"];
@@ -582,6 +594,21 @@ export async function handlePaymentNotify(
   }
 
   if (order.paymentStatus === "PAID") {
+    if (order.deliveryStatus !== "DELIVERED") {
+      try {
+        await deliverOrder(prisma, order.orderNo);
+      } catch (error) {
+        writePaymentNotifyDiagnostic({
+          provider,
+          source,
+          reason: "already paid delivery recovery failed",
+          orderNo: order.orderNo,
+          payload,
+          error,
+        });
+      }
+    }
+
     await createNotifyLog(prisma, {
       orderId: order.id,
       provider,
@@ -674,9 +701,9 @@ export async function handlePaymentNotify(
         status: verified.status,
       });
       return {
-        ok: false,
-        status: "FAILED" as const,
-        message: error instanceof Error ? error.message : "delivery failed",
+        ok: true,
+        status: verified.status,
+        message: error instanceof Error ? `paid, delivery failed: ${error.message}` : "paid, delivery failed",
       };
     }
 

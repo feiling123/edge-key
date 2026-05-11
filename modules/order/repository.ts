@@ -81,10 +81,11 @@ export async function updateOrderPayment(prisma: PrismaClient, orderNo: string, 
   paymentStatus: "UNPAID" | "PAID" | "FAILED";
   paidAt?: Date | null;
 }) {
+  const allowedPreviousPaymentStatus = input.paymentStatus === "PAID" ? ["UNPAID", "FAILED"] : ["UNPAID"];
   const result = await prisma.order.updateMany({
-    where: { 
+    where: {
       orderNo,
-      paymentStatus: "UNPAID" 
+      paymentStatus: { in: allowedPreviousPaymentStatus as Array<"UNPAID" | "FAILED"> },
     },
     data: {
       paymentOrderNo: input.paymentOrderNo ?? null,
@@ -126,9 +127,44 @@ export function closeOrderRecord(prisma: PrismaClient, id: number) {
 }
 
 export async function deleteOrderRecords(prisma: PrismaClient, ids: number[]) {
+  if (!ids.length) return { count: 0 };
+  const orders = await prisma.order.findMany({
+    where: { id: { in: ids } },
+    select: { orderNo: true },
+  });
+  const orderNos = orders.map((order) => order.orderNo).filter(Boolean);
+
   await prisma.orderDelivery.deleteMany({ where: { orderId: { in: ids } } });
-  await prisma.paymentLog.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
+  await prisma.paymentLog.deleteMany({
+    where: {
+      OR: [
+        { orderId: { in: ids } },
+        ...(orderNos.length ? [{ orderNo: { in: orderNos } }] : []),
+      ],
+    },
+  });
   await prisma.telegramLog.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
-  await prisma.card.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
+  await prisma.card.updateMany({
+    where: {
+      orderId: { in: ids },
+      status: "LOCKED",
+    },
+    data: {
+      status: "UNUSED",
+      orderId: null,
+      soldAt: null,
+      deliveryLockToken: null,
+    },
+  });
+  await prisma.card.updateMany({
+    where: {
+      orderId: { in: ids },
+      status: { not: "LOCKED" },
+    },
+    data: {
+      orderId: null,
+      deliveryLockToken: null,
+    },
+  });
   return prisma.order.deleteMany({ where: { id: { in: ids } } });
 }

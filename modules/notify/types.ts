@@ -1,4 +1,4 @@
-export type TelegramScene = "TEST" | "ORDER_PAID" | "DELIVERY_SUCCESS" | "DELIVERY_FAILED";
+export type TelegramScene = "TEST" | "ORDER_PAID" | "DELIVERY_SUCCESS" | "DELIVERY_FAILED" | "ORDER_DELETED" | "ADMIN_LOGIN";
 
 export type TelegramSendStatus = "SUCCESS" | "FAILED";
 
@@ -8,6 +8,8 @@ export interface TelegramPushSettings {
   notifyOrderPaid: boolean;
   notifyDeliverySuccess: boolean;
   notifyDeliveryFailed: boolean;
+  notifyOrderDeleted: boolean;
+  notifyAdminLogin: boolean;
 }
 
 export interface TelegramConfigValue extends TelegramPushSettings {

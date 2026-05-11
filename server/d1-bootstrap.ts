@@ -2,6 +2,8 @@ import { logger } from "../lib/logger";
 import migration0001 from "../prisma/migrations/0001_init.sql?raw";
 import migration0002 from "../prisma/migrations/0002_runtime_secret.sql?raw";
 import migration0003 from "../prisma/migrations/0003_site_content_pages.sql?raw";
+import migration0004 from "../prisma/migrations/0004_delivery_idempotency.sql?raw";
+import migration0005 from "../prisma/migrations/0005_delivery_locks_and_telegram_audit.sql?raw";
 
 const bootstrappedDatabases = new WeakSet<D1Database>();
 const migrationTable = "__edgekey_runtime_migrations";
@@ -10,6 +12,8 @@ const migrations = [
   { id: "0001_init", sql: toIdempotentSql(migration0001) },
   { id: "0002_runtime_secret", sql: toIdempotentSql(migration0002) },
   { id: "0003_site_content_pages", sql: toIdempotentSql(migration0003) },
+  { id: "0004_delivery_idempotency", sql: toIdempotentSql(migration0004) },
+  { id: "0005_delivery_locks_and_telegram_audit", sql: toIdempotentSql(migration0005) },
 ];
 
 export async function ensureD1Ready(database: D1Database) {
@@ -259,6 +263,26 @@ async function seedD1(database: D1Database) {
 失败原因：{{errorMessage}}
 
 查询地址：{{queryUrl}}`,
+    },
+    {
+      scene: "ORDER_DELETED",
+      name: "删除订单日志",
+      content: `删除订单日志
+
+网站：{{siteUrl}}
+订单号：{{orderNo}}
+客户端 IP：{{clientIp}}
+操作时间：{{sentAt}}`,
+    },
+    {
+      scene: "ADMIN_LOGIN",
+      name: "后台登录日志",
+      content: `后台登录日志
+
+网站：{{siteUrl}}
+用户名：{{username}}
+客户端 IP：{{clientIp}}
+登录时间：{{sentAt}}`,
     },
   ];
 

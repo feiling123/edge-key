@@ -8,7 +8,9 @@ import { randomBytes } from "node:crypto";
 import { internalServerError, rateLimitError } from "../lib/app-error";
 import { logger } from "../lib/logger";
 import { adminPublicPath } from "../lib/admin-path";
+import { getClientIpFromRequest } from "../lib/request-context";
 import { verifyAdminPassword, hashAdminPassword } from "../modules/auth/crypto";
+import { notifyAdminLogin } from "../modules/notify/service";
 
 const ADMIN_ROLE = "admin" as const;
 const AUTH_SECRET_KEY = "auth_secret";
@@ -18,6 +20,11 @@ let cachedGeneratedAuthSecret: string | null = null;
 interface AuthContext {
   prisma: PrismaClient;
   session?: Session | null;
+}
+
+interface AuthRequestMeta {
+  clientIp?: string;
+  siteUrl?: string;
 }
 
 async function getAuthSecret(prisma: PrismaClient) {
@@ -88,11 +95,6 @@ function getLoginRateLimitConfig() {
   };
 }
 
-function getClientIp(request: Request) {
-  const forwarded = request.headers.get("x-forwarded-for");
-  return request.headers.get("cf-connecting-ip") || forwarded?.split(",")[0]?.trim() || "unknown";
-}
-
 function isCredentialsCallbackRequest(request: Request) {
   const url = new URL(request.url);
   return request.method === "POST" && url.pathname.endsWith("/api/auth/callback/credentials");
@@ -101,7 +103,7 @@ function isCredentialsCallbackRequest(request: Request) {
 function isRateLimited(request: Request) {
   const { maxAttempts, windowMs } = getLoginRateLimitConfig();
   const now = Date.now();
-  const key = getClientIp(request);
+  const key = getClientIpFromRequest(request);
   const current = loginAttemptStore.get(key);
 
   if (!current || current.expiresAt <= now) {
@@ -149,7 +151,7 @@ async function findAdminByCredentials(prisma: PrismaClient, username: string, pa
   };
 }
 
-async function createAuthjsConfig(prisma: PrismaClient) {
+async function createAuthjsConfig(prisma: PrismaClient, requestMeta: AuthRequestMeta = {}) {
   return {
     basePath: "/api/auth",
     trustHost: true,
@@ -181,6 +183,26 @@ async function createAuthjsConfig(prisma: PrismaClient) {
         },
       }),
     ],
+    events: {
+      async signIn({ user }) {
+        const signedUser = user as { username?: unknown; name?: unknown; role?: unknown };
+        if (signedUser.role !== ADMIN_ROLE) return;
+        try {
+          await notifyAdminLogin({
+            prisma,
+            username: typeof signedUser.username === "string"
+              ? signedUser.username
+              : (typeof signedUser.name === "string" ? signedUser.name : "admin"),
+            clientIp: requestMeta.clientIp,
+            siteUrl: requestMeta.siteUrl,
+          });
+        } catch (error) {
+          logger.warn(error instanceof Error ? error : new Error(String(error)), {
+            event: "telegram.admin_login.failed",
+          });
+        }
+      },
+    },
     callbacks: {
       async jwt({ token, user }) {
         if (user) {
@@ -272,7 +294,11 @@ export const authjsHandler = enhance(
     }
 
     const authContext = context as unknown as AuthContext;
-    return Auth(request, await createAuthjsConfig(authContext.prisma));
+    const url = new URL(request.url);
+    return Auth(request, await createAuthjsConfig(authContext.prisma, {
+      clientIp: getClientIpFromRequest(request),
+      siteUrl: url.origin,
+    }));
   },
   {
     name: "my-app:authjs-handler",

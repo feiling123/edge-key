@@ -87,7 +87,7 @@
             <option value="UNUSED">{{ l("未售出", "Unused") }}</option>
             <option value="SOLD">{{ l("已售出", "Sold") }}</option>
             <option value="LOCKED">{{ l("锁定中", "Locked") }}</option>
-            <option value="INVALID">{{ l("已失效", "Invalid") }}</option>
+            <option value="DISABLED">{{ l("已禁用", "Disabled") }}</option>
           </select>
           <input v-model="filter.batchNo" class="input input-sm input-bordered w-52" :placeholder="l('批次号', 'Batch No.')" />
           <input v-model="filter.startDate" type="date" class="input input-sm input-bordered w-46" />
@@ -107,13 +107,13 @@
           @update:page="handlePageChange"
         >
           <template #head-select>
-            <input type="checkbox" class="checkbox checkbox-sm" :checked="isCurrentPageSelected" :disabled="!currentUnusedRows.length" @change="toggleCurrentPageSelection" />
+            <input type="checkbox" class="checkbox checkbox-sm" :checked="isCurrentPageSelected" :disabled="!currentSelectableRows.length" @change="toggleCurrentPageSelection" />
           </template>
           <template #select="{ row }">
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
-              :disabled="row.status !== 'UNUSED'"
+              :disabled="row.status === 'LOCKED'"
               :checked="selectedCardIds.has(row.id)"
               @change="toggleCardSelection(row.id)"
             />
@@ -128,8 +128,9 @@
             {{ formatDate(value) }}
           </template>
           <template #actions="{ row }">
-            <AppButton v-if="row.status === 'UNUSED'" size="xs" variant="outline" @click="openEditCard(row)">{{ l("编辑", "Edit") }}</AppButton>
-            <AppButton v-if="row.status === 'UNUSED'" size="xs" variant="danger" @click="handleDeleteCard(row.id)">{{ l("删除", "Delete") }}</AppButton>
+            <AppButton v-if="row.status !== 'LOCKED'" size="xs" variant="outline" @click="openEditCard(row)">{{ l("编辑", "Edit") }}</AppButton>
+            <AppButton v-if="row.status !== 'LOCKED'" size="xs" variant="danger" @click="handleDeleteCard(row.id)">{{ l("删除", "Delete") }}</AppButton>
+            <span v-else class="text-sm text-base-content/50">-</span>
           </template>
         </DataTable>
       </div>
@@ -189,8 +190,8 @@ const columns = computed(() => [
   { key: "actions", label: l("操作", "Actions") },
 ]);
 
-const currentUnusedRows = computed(() => cardPage.value.items.filter((row) => row.status === "UNUSED"));
-const isCurrentPageSelected = computed(() => currentUnusedRows.value.length > 0 && currentUnusedRows.value.every((row) => selectedCardIds.value.has(row.id)));
+const currentSelectableRows = computed(() => cardPage.value.items.filter((row) => row.status !== "LOCKED"));
+const isCurrentPageSelected = computed(() => currentSelectableRows.value.length > 0 && currentSelectableRows.value.every((row) => selectedCardIds.value.has(row.id)));
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString(locale.value === "zh" ? "zh-CN" : "en-US");
@@ -201,12 +202,12 @@ function getStatusLabel(status: string) {
     UNUSED: l("未售出", "Unused"),
     SOLD: l("已售出", "Sold"),
     LOCKED: l("锁定中", "Locked"),
-    INVALID: l("已失效", "Invalid"),
+    DISABLED: l("已禁用", "Disabled"),
   } as Record<string, string>)[status] || status;
 }
 
 function getCardStatusType(status: string): "success" | "default" | "warning" | "danger" {
-  return ({ UNUSED: "success", SOLD: "default", LOCKED: "warning", INVALID: "danger" } as Record<string, "success" | "default" | "warning" | "danger">)[status] ?? "default";
+  return ({ UNUSED: "success", SOLD: "default", LOCKED: "warning", DISABLED: "danger" } as Record<string, "success" | "default" | "warning" | "danger">)[status] ?? "default";
 }
 
 async function fetchPage(page: number) {
@@ -254,9 +255,9 @@ function toggleCardSelection(id: number) {
 function toggleCurrentPageSelection() {
   const next = new Set(selectedCardIds.value);
   if (isCurrentPageSelected.value) {
-    for (const row of currentUnusedRows.value) next.delete(row.id);
+    for (const row of currentSelectableRows.value) next.delete(row.id);
   } else {
-    for (const row of currentUnusedRows.value) next.add(row.id);
+    for (const row of currentSelectableRows.value) next.add(row.id);
   }
   selectedCardIds.value = next;
 }
@@ -331,7 +332,10 @@ async function handleDeleteSelectedCards() {
   if (!ids.length) return;
   const ok = await confirmRef.value?.confirm({
     title: l("批量删除卡密", "Delete Cards"),
-    message: l(`确认删除选中的 ${ids.length} 条未售卡密？已售卡密不会被删除。`, `Delete ${ids.length} selected unused card(s)? Sold cards will not be deleted.`),
+    message: l(
+      `确认删除选中的 ${ids.length} 条卡密？已售卡密关联的订单会同时删除，锁定中的卡密不会被删除。`,
+      `Delete ${ids.length} selected card(s)? Orders linked to sold cards will also be deleted. Locked cards will not be deleted.`,
+    ),
     confirmText: l("删除", "Delete"),
     danger: true,
   });
@@ -349,7 +353,15 @@ async function handleDeleteSelectedCards() {
 }
 
 async function handleDeleteCard(id: number) {
-  const ok = await confirmRef.value?.confirm({ title: l("删除卡密", "Delete Card"), message: l(`确认删除卡密 #${id}？此操作不可撤销。`, `Delete card #${id}? This cannot be undone.`), confirmText: l("删除", "Delete"), danger: true });
+  const ok = await confirmRef.value?.confirm({
+    title: l("删除卡密", "Delete Card"),
+    message: l(
+      `确认删除卡密 #${id}？如果该卡密已售出，关联订单会同时删除。此操作不可撤销。`,
+      `Delete card #${id}? If it is sold, the linked order will also be deleted. This cannot be undone.`,
+    ),
+    confirmText: l("删除", "Delete"),
+    danger: true,
+  });
   if (!ok) return;
   message.value = "";
   errorMessage.value = "";

@@ -7,14 +7,16 @@ import {
   countCardStats,
   createCardRecord,
   createManyCards,
-  deleteCardById,
   deleteCardsByIds,
   deleteUnusedCardsByProduct,
   findCardById,
+  findCardsByIds,
+  findCardsByOrderIds,
   listCardRecords,
   listCardRecordsPaged,
   updateUnusedCardById,
 } from "./repository";
+import { deleteOrders } from "../order/service";
 
 function getInventoryContext() {
   return getContext<{ prisma: PrismaClient }>();
@@ -173,8 +175,15 @@ export async function deleteCard(input: { id: number }) {
   const adminContext = getAdminContext();
   const { prisma } = adminContext;
   const adminId = Number(adminContext.session?.user?.id);
-  const result = await deleteCardById(prisma, input.id);
-  if (result.count === 0) throw badRequestError("卡密不存在或已售出，无法删除", "CARD_DELETE_FAILED");
+  const card = await findCardById(prisma, input.id);
+  let idsToDelete = [input.id];
+  if (card?.orderId) {
+    const orderCards = await findCardsByOrderIds(prisma, [card.orderId]);
+    idsToDelete = [...new Set([...idsToDelete, ...orderCards.map((item) => item.id)])];
+    await deleteOrders({ ids: [card.orderId] });
+  }
+  const result = await deleteCardsByIds(prisma, idsToDelete);
+  if (result.count === 0) throw badRequestError("卡密不存在或锁定中，无法删除", "CARD_DELETE_FAILED");
   await logAdminOperation({ action: "DELETE_CARD", targetType: "Card", targetId: String(input.id), detail: "" }, { prisma, adminId });
   return { id: input.id };
 }
@@ -186,13 +195,21 @@ export async function deleteCards(input: { ids: number[] }) {
   const ids = [...new Set(input.ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
   if (!ids.length) throw badRequestError("请选择要删除的卡密", "CARD_IDS_REQUIRED");
 
-  const result = await deleteCardsByIds(prisma, ids);
+  const cards = await findCardsByIds(prisma, ids);
+  const orderIds = [...new Set(cards.map((item) => item.orderId).filter((id): id is number => typeof id === "number" && id > 0))];
+  let idsToDelete = ids;
+  if (orderIds.length) {
+    const orderCards = await findCardsByOrderIds(prisma, orderIds);
+    idsToDelete = [...new Set([...idsToDelete, ...orderCards.map((item) => item.id)])];
+    await deleteOrders({ ids: orderIds });
+  }
+  const result = await deleteCardsByIds(prisma, idsToDelete);
   await logAdminOperation(
     {
       action: "DELETE_CARDS",
       targetType: "Card",
-      targetId: ids.join(","),
-      detail: `requested=${ids.length};deleted=${result.count}`,
+      targetId: idsToDelete.join(","),
+      detail: `requested=${ids.length};expanded=${idsToDelete.length};deleted=${result.count}`,
     },
     { prisma, adminId },
   );
@@ -227,7 +244,7 @@ export async function updateCard(input: { id: number; productId: number; content
     content,
     batchNo: input.batchNo?.trim() || null,
   });
-  if (result.count === 0) throw badRequestError("卡密不存在或已售出，无法编辑", "CARD_UPDATE_FAILED");
+  if (result.count === 0) throw badRequestError("卡密不存在或锁定中，无法编辑", "CARD_UPDATE_FAILED");
 
   const card = await findCardById(prisma, input.id);
   await logAdminOperation(
