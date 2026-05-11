@@ -1,12 +1,13 @@
 import { getContext } from "telefunc";
 import type { PaymentProvider } from "../payment/types";
 import type { PrismaClient } from "../../generated/prisma/client";
-import { conflictError, notFoundError } from "../../lib/app-error";
+import { badRequestError, conflictError, notFoundError } from "../../lib/app-error";
 import { validateOrderInput } from "../../lib/validators/order";
 import { getAdminContext, logAdminOperation } from "../auth/service";
 import { getAdminProductById } from "../catalog/service";
 import { createPaymentForOrder, handlePaymentNotify, validatePaymentSelection } from "../payment/service";
-import { closeOrderRecord, createOrderRecord, findOrderById, findOrderWithProduct, listOrderRecords } from "./repository";
+import { deliverOrder } from "../delivery/service";
+import { closeOrderRecord, createOrderRecord, deleteOrderRecords, findOrderById, findOrderWithProduct, listOrderRecords } from "./repository";
 import { generateOrderNo, generateQueryToken } from "./number";
 import { logger } from "../../lib/logger";
 
@@ -122,8 +123,8 @@ export async function getOrderForQuery(
   }
 
   // notify 与 return 几乎同时到达时，return 这次读取可能正好卡在
-  // “订单已支付但异步发货还没写完”的瞬间。这里做一次短暂重查，
-  // 优先把最终的 DELIVERED 状态和发货内容返回给页面，避免用户手动刷新。
+  // “订单已支付但异步发货还没写完”的瞬间。先短暂重查；如果仍未发货，
+  // 用数据库中的订单和库存自愈一次，避免回调中断后订单长期停在已支付未发货。
   if (order.paymentStatus === "PAID" && order.deliveryStatus === "NOT_DELIVERED") {
     for (let index = 0; index < 3; index += 1) {
       await sleep(150);
@@ -136,7 +137,33 @@ export async function getOrderForQuery(
         break;
       }
     }
+
+    if (order.deliveryStatus === "NOT_DELIVERED") {
+      try {
+        await deliverOrder(client, orderNo);
+      } catch (error) {
+        logger.error(error instanceof Error ? error : String(error), {
+          event: "order.query_delivery_recovery.failed",
+          orderNo,
+        });
+      }
+
+      const refreshed = await findOrderWithProduct(client, orderNo);
+      if (refreshed && refreshed.queryToken === queryToken) {
+        order = refreshed;
+      }
+    }
   }
+
+  const successfulDeliveryContents = order.deliveries.filter((item) => item.status === "SUCCESS").flatMap((item) => {
+    try {
+      const parsed = JSON.parse(item.contentSnapshot) as string[];
+      return Array.isArray(parsed) ? parsed : [item.contentSnapshot];
+    } catch {
+      return [item.contentSnapshot];
+    }
+  });
+  const deliveryContents = successfulDeliveryContents.length > 0 ? successfulDeliveryContents : order.cards.map((card) => card.content);
 
   return {
     id: order.id,
@@ -151,15 +178,25 @@ export async function getOrderForQuery(
     paymentProvider: order.paymentProvider,
     productSlug: order.product.slug,
     createdAt: order.createdAt.toISOString(),
-    deliveryContents: order.deliveries.flatMap((item) => {
-      try {
-        const parsed = JSON.parse(item.contentSnapshot) as string[];
-        return Array.isArray(parsed) ? parsed : [item.contentSnapshot];
-      } catch {
-        return [item.contentSnapshot];
-      }
-    }),
+    deliveryContents,
   };
+}
+
+export async function getOrderForEmailQuery(orderNo: string, email: string, prisma?: PrismaClient) {
+  const client = prisma ?? getOrderContext().prisma;
+  const normalizedOrderNo = orderNo.trim();
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (!normalizedOrderNo || !normalizedEmail || !normalizedEmail.includes("@")) {
+    return null;
+  }
+
+  const order = await findOrderWithProduct(client, normalizedOrderNo);
+  if (!order || order.contactType !== "EMAIL" || (order.contactValue ?? "").trim().toLowerCase() !== normalizedEmail) {
+    return null;
+  }
+
+  return getOrderForQuery(order.orderNo, order.queryToken, undefined, client);
 }
 
 export async function getAdminOrders(prisma?: PrismaClient) {
@@ -213,6 +250,36 @@ export async function closeOrder(orderId: number) {
   return {
     id: order.id,
     status: order.status,
+  };
+}
+
+export async function deleteOrders(input: { ids: number[] }) {
+  const adminContext = getAdminContext();
+  const { prisma } = adminContext;
+  const adminId = Number(adminContext.session?.user?.id);
+  const ids = [...new Set(input.ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+
+  if (!ids.length) {
+    throw badRequestError("请选择要删除的订单", "ORDER_IDS_REQUIRED");
+  }
+
+  const result = await deleteOrderRecords(prisma, ids);
+  await logAdminOperation(
+    {
+      action: "DELETE_ORDERS",
+      targetType: "Order",
+      targetId: ids.join(","),
+      detail: `requested=${ids.length};deleted=${result.count}`,
+    },
+    {
+      prisma,
+      adminId,
+    },
+  );
+
+  return {
+    requested: ids.length,
+    count: result.count,
   };
 }
 

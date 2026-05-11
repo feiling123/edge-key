@@ -23,7 +23,13 @@
         <input v-model="filter.endDate" type="date" class="input input-sm input-bordered w-40" />
         <AppButton size="sm" variant="primary" @click="handleSearch">{{ l("搜索", "Search") }}</AppButton>
         <AppButton size="sm" variant="ghost" @click="handleReset">{{ l("重置", "Reset") }}</AppButton>
+        <AppButton size="sm" variant="danger" :disabled="!selectedOrderIds.size" @click="handleDeleteSelectedOrders">
+          {{ l(`批量删除 (${selectedOrderIds.size})`, `Delete Selected (${selectedOrderIds.size})`) }}
+        </AppButton>
       </div>
+
+      <p v-if="message" class="text-sm text-base-content/70">{{ message }}</p>
+      <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
 
       <DataTable
         :columns="columns"
@@ -33,6 +39,23 @@
         :page-size="PAGE_SIZE"
         @update:page="fetchPage"
       >
+        <template #head-select>
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            :checked="isCurrentPageSelected"
+            :disabled="!orderPage.items.length"
+            @change="toggleCurrentPageSelection"
+          />
+        </template>
+        <template #select="{ row }">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            :checked="selectedOrderIds.has(row.id)"
+            @change="toggleOrderSelection(row.id)"
+          />
+        </template>
         <template #amount="{ value }">{{ formatCents(value) }}</template>
         <template #paymentProvider="{ value }">{{ getPaymentProviderDisplay(value) }}</template>
         <template #status="{ row }">
@@ -44,21 +67,28 @@
         </template>
         <template #createdAt="{ value }">{{ formatDate(value) }}</template>
         <template #actions="{ row }">
-          <AppButton :href="adminHref(`/admin/orders/${row.id}`)" size="xs" variant="outline">{{ l("详情", "Details") }}</AppButton>
+          <div class="flex flex-wrap gap-2">
+            <AppButton :href="adminHref(`/admin/orders/${row.id}`)" size="xs" variant="outline">{{ l("详情", "Details") }}</AppButton>
+            <AppButton size="xs" variant="danger" @click="handleDeleteOrder(row.id, row.orderNo)">{{ l("删除", "Delete") }}</AppButton>
+          </div>
         </template>
       </DataTable>
     </div>
   </section>
+  <ConfirmDialog ref="confirmRef" />
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, useTemplateRef } from "vue";
 import AppButton from "../../../components/AppButton.vue";
 import { useData } from "vike-vue/useData";
+import { normalizeTelefuncError } from "../../../lib/app-error";
+import ConfirmDialog from "../../../components/ConfirmDialog.vue";
 import DataTable from "../../../components/DataTable.vue";
 import { formatCents } from "../../../lib/utils/money";
 import { getDeliveryStatusType, getOrderStatusType, getPaymentStatusType } from "../../../lib/utils/order-status";
 import StatusTag from "../../../components/StatusTag.vue";
+import { onDeleteOrders } from "./deleteOrders.telefunc";
 import { onQueryOrders } from "./queryOrders.telefunc";
 import { useAdminPath } from "../../../lib/client-admin-path";
 import type { Data } from "./+data";
@@ -71,10 +101,15 @@ const { l, t, locale } = useI18n();
 const PAGE_SIZE = 20;
 const currentPage = ref(1);
 const orderPage = ref(orders);
+const selectedOrderIds = ref(new Set<number>());
+const confirmRef = useTemplateRef<InstanceType<typeof ConfirmDialog>>("confirmRef");
+const message = ref("");
+const errorMessage = ref("");
 
 const filter = reactive({ orderNo: "", productName: "", paymentProvider: "", status: "", startDate: "", endDate: "" });
 
 const columns = computed(() => [
+  { key: "select", label: "" },
   { key: "orderNo", label: l("订单号", "Order No.") },
   { key: "productName", label: l("商品", "Product") },
   { key: "amount", label: l("金额", "Amount") },
@@ -83,6 +118,10 @@ const columns = computed(() => [
   { key: "createdAt", label: l("时间", "Time") },
   { key: "actions", label: l("操作", "Actions") },
 ]);
+
+const isCurrentPageSelected = computed(
+  () => orderPage.value.items.length > 0 && orderPage.value.items.every((row) => selectedOrderIds.value.has(row.id)),
+);
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString(locale.value === "zh" ? "zh-CN" : "en-US");
@@ -118,6 +157,7 @@ async function fetchPage(page: number) {
     pageSize: PAGE_SIZE,
   });
   currentPage.value = page;
+  selectedOrderIds.value = new Set([...selectedOrderIds.value].filter((id) => orderPage.value.items.some((row) => row.id === id)));
 }
 
 async function handleSearch() { await fetchPage(1); }
@@ -130,5 +170,62 @@ async function handleReset() {
   filter.startDate = "";
   filter.endDate = "";
   await fetchPage(1);
+}
+
+function toggleOrderSelection(id: number) {
+  const next = new Set(selectedOrderIds.value);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  selectedOrderIds.value = next;
+}
+
+function toggleCurrentPageSelection() {
+  const next = new Set(selectedOrderIds.value);
+  if (isCurrentPageSelected.value) {
+    for (const row of orderPage.value.items) next.delete(row.id);
+  } else {
+    for (const row of orderPage.value.items) next.add(row.id);
+  }
+  selectedOrderIds.value = next;
+}
+
+async function deleteOrdersByIds(ids: number[]) {
+  message.value = "";
+  errorMessage.value = "";
+  try {
+    const result = await onDeleteOrders({ ids });
+    selectedOrderIds.value = new Set([...selectedOrderIds.value].filter((id) => !ids.includes(id)));
+    message.value = l(`已删除 ${result.count} 个订单`, `${result.count} order(s) deleted`);
+    await fetchPage(currentPage.value);
+  } catch (error) {
+    errorMessage.value = normalizeTelefuncError(error, l("删除失败", "Delete failed"));
+  }
+}
+
+async function handleDeleteOrder(id: number, orderNo: string) {
+  const ok = await confirmRef.value?.confirm({
+    title: l("删除订单", "Delete Order"),
+    message: l(`确认删除订单 ${orderNo}？此操作不可撤销。`, `Delete order ${orderNo}? This cannot be undone.`),
+    confirmText: l("删除", "Delete"),
+    danger: true,
+  });
+  if (!ok) return;
+  await deleteOrdersByIds([id]);
+}
+
+async function handleDeleteSelectedOrders() {
+  const ids = [...selectedOrderIds.value];
+  if (!ids.length) return;
+  const ok = await confirmRef.value?.confirm({
+    title: l("批量删除订单", "Delete Orders"),
+    message: l(`确认删除选中的 ${ids.length} 个订单？此操作不可撤销。`, `Delete ${ids.length} selected order(s)? This cannot be undone.`),
+    confirmText: l("删除", "Delete"),
+    danger: true,
+  });
+  if (!ok) return;
+  await deleteOrdersByIds(ids);
 }
 </script>

@@ -244,6 +244,7 @@ model OrderDelivery {
   order           Order                @relation(fields: [orderId], references: [id])
 
   @@index([orderId, createdAt])
+  @@unique([orderId, deliveryType, status])
 }
 
 model PaymentConfig {

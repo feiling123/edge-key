@@ -4,7 +4,9 @@
       <table class="table table-zebra w-full">
         <thead class="sticky top-0 z-10 bg-base-200">
           <tr>
-            <th v-for="col in columns" :key="col.key">{{ col.label }}</th>
+            <th v-for="col in columns" :key="col.key">
+              <slot :name="`head-${col.key}`">{{ col.label }}</slot>
+            </th>
           </tr>
         </thead>
         <tbody>

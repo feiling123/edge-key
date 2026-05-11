@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { handlePaymentNotify } from "../modules/payment/service";
+import { getOrderForQuery } from "../modules/order/service";
 
 function assert(condition: unknown, message: string) {
   if (!condition) {
@@ -35,6 +36,7 @@ function createMockPrisma() {
       paymentOrderNo: null,
       paidAt: null,
       deliveredAt: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
     },
     cards: [
       {
@@ -119,8 +121,9 @@ function createMockPrisma() {
       async updateMany({ where, data }: any) {
         const matchesOrderNo = !where.orderNo || where.orderNo === state.order.orderNo;
         const matchesPaymentStatus = !where.paymentStatus || where.paymentStatus === state.order.paymentStatus;
+        const matchesDeliveryStatus = !where.deliveryStatus || where.deliveryStatus === state.order.deliveryStatus;
 
-        if (!matchesOrderNo || !matchesPaymentStatus) {
+        if (!matchesOrderNo || !matchesPaymentStatus || !matchesDeliveryStatus) {
           return { count: 0 };
         }
 
@@ -131,7 +134,7 @@ function createMockPrisma() {
     card: {
       async findMany({ where, take }: any) {
         return state.cards
-          .filter((item) => item.productId === where.productId && item.status === where.status)
+          .filter((item) => item.productId === where.productId && item.status === where.status && (where.orderId === undefined || item.orderId === where.orderId))
           .slice(0, take)
           .map((item) => ({ ...item }));
       },
@@ -142,6 +145,18 @@ function createMockPrisma() {
         Object.assign(existingCard, data);
         return { ...existingCard };
       },
+      async updateMany({ where, data }: any) {
+        const card = state.cards.find((item) => {
+          const matchesId = where.id === undefined || item.id === where.id;
+          const matchesStatus = where.status === undefined || item.status === where.status;
+          const matchesOrderId = where.orderId === undefined || item.orderId === where.orderId;
+          return matchesId && matchesStatus && matchesOrderId;
+        });
+
+        if (!card) return { count: 0 };
+        Object.assign(card, data);
+        return { count: 1 };
+      },
     },
     orderDelivery: {
       async create({ data }: any) {
@@ -149,6 +164,9 @@ function createMockPrisma() {
         state.deliveries.push(record);
         return record;
       },
+    },
+    async $transaction(callback: any) {
+      return callback(prisma);
     },
   };
 
@@ -206,7 +224,44 @@ async function verifyAmountMismatch() {
   assert(state.deliveries.length === 0, "amount mismatch should not deliver");
 }
 
+async function verifyPaidOrderQueryRecoversDelivery() {
+  const { prisma, state } = createMockPrisma();
+  state.order.status = "PAID";
+  state.order.paymentStatus = "PAID";
+  state.order.deliveryStatus = "NOT_DELIVERED";
+  (state.order as any).paidAt = new Date();
+
+  const result = await getOrderForQuery(state.order.orderNo, state.order.queryToken, undefined, prisma);
+  assert(result?.paymentStatus === "PAID", "query should return paid status");
+  assert(result?.deliveryStatus === "DELIVERED", "query should recover delivery for paid orders");
+  assert(result?.deliveryContents.includes("CARD-001-SECRET"), "query should return delivered card content");
+}
+
+async function verifyDeliveredOrderQueryDoesNotRedeliver() {
+  const { prisma, state } = createMockPrisma();
+  state.order.status = "PAID";
+  state.order.paymentStatus = "PAID";
+  state.order.deliveryStatus = "NOT_DELIVERED";
+  (state.order as any).paidAt = new Date();
+  state.cards[0].status = "SOLD";
+  (state.cards[0] as any).orderId = state.order.id;
+  state.deliveries.push({
+    id: 1,
+    orderId: state.order.id,
+    deliveryType: "CARD",
+    contentSnapshot: JSON.stringify(["CARD-001-SECRET"]),
+    status: "SUCCESS",
+  });
+
+  const result = await getOrderForQuery(state.order.orderNo, state.order.queryToken, undefined, prisma);
+  assert(result?.deliveryStatus === "DELIVERED", "query should reconcile existing successful delivery");
+  assert(state.deliveries.length === 1, "query should not create another delivery record");
+  assert(state.cards.filter((item) => item.orderId === state.order.id).length === 1, "query should not allocate extra cards");
+}
+
 await verifySuccessAndIdempotency();
 await verifyAmountMismatch();
+await verifyPaidOrderQueryRecoversDelivery();
+await verifyDeliveredOrderQueryDoesNotRedeliver();
 
 console.log("Payment notify verification passed.");

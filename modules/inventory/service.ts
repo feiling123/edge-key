@@ -3,7 +3,18 @@ import type { PrismaClient } from "../../generated/prisma/client";
 import { badRequestError } from "../../lib/app-error";
 import { getAdminContext, logAdminOperation } from "../auth/service";
 import { parseCardLines } from "./importer";
-import { countCardStats, createCardRecord, createManyCards, deleteCardById, deleteUnusedCardsByProduct, listCardRecords, listCardRecordsPaged } from "./repository";
+import {
+  countCardStats,
+  createCardRecord,
+  createManyCards,
+  deleteCardById,
+  deleteCardsByIds,
+  deleteUnusedCardsByProduct,
+  findCardById,
+  listCardRecords,
+  listCardRecordsPaged,
+  updateUnusedCardById,
+} from "./repository";
 
 function getInventoryContext() {
   return getContext<{ prisma: PrismaClient }>();
@@ -49,6 +60,7 @@ export async function getAdminCards(prisma?: PrismaClient) {
     orderId: item.orderId,
     soldAt: item.soldAt ? item.soldAt.toISOString() : null,
     createdAt: item.createdAt.toISOString(),
+    content: item.content,
     contentPreview: previewCard(item.content),
   }));
 }
@@ -91,6 +103,7 @@ export async function createCard(input: { productId: number; content: string; ba
     orderId: card.orderId,
     soldAt: null,
     createdAt: card.createdAt.toISOString(),
+    content: card.content,
     contentPreview: previewCard(card.content),
   };
 }
@@ -166,6 +179,81 @@ export async function deleteCard(input: { id: number }) {
   return { id: input.id };
 }
 
+export async function deleteCards(input: { ids: number[] }) {
+  const adminContext = getAdminContext();
+  const { prisma } = adminContext;
+  const adminId = Number(adminContext.session?.user?.id);
+  const ids = [...new Set(input.ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!ids.length) throw badRequestError("请选择要删除的卡密", "CARD_IDS_REQUIRED");
+
+  const result = await deleteCardsByIds(prisma, ids);
+  await logAdminOperation(
+    {
+      action: "DELETE_CARDS",
+      targetType: "Card",
+      targetId: ids.join(","),
+      detail: `requested=${ids.length};deleted=${result.count}`,
+    },
+    { prisma, adminId },
+  );
+
+  return {
+    requested: ids.length,
+    count: result.count,
+  };
+}
+
+export async function updateCard(input: { id: number; productId: number; content: string; batchNo?: string }) {
+  const adminContext = getAdminContext();
+  const { prisma } = adminContext;
+  const adminId = Number(adminContext.session?.user?.id);
+  const content = input.content.trim();
+  const productId = Number(input.productId);
+
+  if (!Number.isInteger(input.id) || input.id <= 0) {
+    throw badRequestError("卡密 ID 无效", "CARD_ID_INVALID");
+  }
+
+  if (!Number.isInteger(productId) || productId <= 0) {
+    throw badRequestError("请选择商品", "CARD_PRODUCT_REQUIRED");
+  }
+
+  if (!content) {
+    throw badRequestError("卡密内容不能为空", "CARD_CONTENT_REQUIRED");
+  }
+
+  const result = await updateUnusedCardById(prisma, input.id, {
+    productId,
+    content,
+    batchNo: input.batchNo?.trim() || null,
+  });
+  if (result.count === 0) throw badRequestError("卡密不存在或已售出，无法编辑", "CARD_UPDATE_FAILED");
+
+  const card = await findCardById(prisma, input.id);
+  await logAdminOperation(
+    {
+      action: "UPDATE_CARD",
+      targetType: "Card",
+      targetId: String(input.id),
+      detail: `productId=${productId}`,
+    },
+    { prisma, adminId },
+  );
+
+  return card ? {
+    id: card.id,
+    productId: card.productId,
+    productName: card.product.name,
+    status: card.status,
+    batchNo: card.batchNo,
+    orderId: card.orderId,
+    soldAt: card.soldAt ? card.soldAt.toISOString() : null,
+    createdAt: card.createdAt.toISOString(),
+    content: card.content,
+    contentPreview: previewCard(card.content),
+  } : { id: input.id };
+}
+
 export async function getAdminCardsPaged(params: {
   productId?: number;
   batchNo?: string;
@@ -188,6 +276,7 @@ export async function getAdminCardsPaged(params: {
       orderId: item.orderId,
       soldAt: item.soldAt ? item.soldAt.toISOString() : null,
       createdAt: item.createdAt.toISOString(),
+      content: item.content,
       contentPreview: previewCard(item.content),
     })),
   };

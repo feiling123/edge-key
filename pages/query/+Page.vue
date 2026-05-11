@@ -53,8 +53,8 @@
           <input v-model="orderNo" class="input input-bordered w-full" :placeholder="t('query.order_no_placeholder')" />
         </label>
         <label class="flex flex-col gap-1.5">
-          <span class="label-text font-medium">{{ t("query.token") }}</span>
-          <input v-model="queryToken" class="input input-bordered w-full" :placeholder="t('query.token_placeholder')" />
+          <span class="label-text font-medium">{{ t("query.email") }}</span>
+          <input v-model="email" type="email" class="input input-bordered w-full" :placeholder="t('query.email_placeholder')" />
         </label>
         <div class="flex items-center gap-3">
           <AppButton variant="primary" :loading="querying" @click="handleQuery">{{ t("query.submit") }}</AppButton>
@@ -77,7 +77,7 @@ import { useI18n } from "../../lib/client-i18n";
 
 const activeTab = ref<"local" | "query">("query");
 const orderNo = ref("");
-const queryToken = ref("");
+const email = ref("");
 const errorMessage = ref("");
 const querying = ref(false);
 const localOrders = ref<LocalOrder[]>([]);
@@ -98,7 +98,7 @@ async function handleQuery() {
   try {
     const result = await onQueryOrder({
       orderNo: orderNo.value,
-      queryToken: queryToken.value,
+      email: email.value,
     });
 
     if (!result) {
@@ -106,7 +106,7 @@ async function handleQuery() {
       return;
     }
 
-    window.location.href = `/order/${result.orderNo}?token=${encodeURIComponent(queryToken.value)}`;
+    window.location.href = `/order/${result.orderNo}?token=${encodeURIComponent(result.queryToken)}`;
   } catch (error) {
     errorMessage.value = normalizeTelefuncError(error, t("query.failed"));
   } finally {

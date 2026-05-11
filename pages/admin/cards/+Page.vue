@@ -43,6 +43,25 @@
       <form method="dialog" class="modal-backdrop"><button>{{ l("关闭", "Close") }}</button></form>
     </dialog>
 
+    <dialog ref="editModalRef" class="modal">
+      <div class="modal-box space-y-3">
+        <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+        <h3 class="text-lg font-bold">{{ l("编辑卡密", "Edit Card") }}</h3>
+        <select v-model="editForm.productId" class="select select-bordered w-full">
+          <option value="">{{ l("请选择商品", "Select product") }}</option>
+          <option v-for="product in products" :key="product.id" :value="String(product.id)">{{ product.name }}</option>
+        </select>
+        <input v-model="editForm.batchNo" class="input input-bordered w-full" :placeholder="l('批次号（可选）', 'Batch No. (optional)')" />
+        <textarea v-model="editForm.content" class="textarea textarea-bordered w-full" rows="5" :placeholder="l('输入卡密内容', 'Enter card content')"></textarea>
+        <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
+        <div class="modal-action">
+          <AppButton variant="primary" @click="handleUpdateCard">{{ l("保存卡密", "Save Card") }}</AppButton>
+          <form method="dialog"><AppButton variant="ghost">{{ l("取消", "Cancel") }}</AppButton></form>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop"><button>{{ l("关闭", "Close") }}</button></form>
+    </dialog>
+
     <section class="card bg-base-100 shadow-sm">
       <div class="card-body space-y-4">
         <div class="flex items-center justify-between gap-4">
@@ -50,6 +69,9 @@
           <div class="flex gap-2">
             <AppButton size="sm" variant="primary" @click="addModalRef?.showModal()">{{ l("新增卡密", "Add Card") }}</AppButton>
             <AppButton size="sm" variant="outline" @click="importModalRef?.showModal()">{{ l("批量导入", "Bulk Import") }}</AppButton>
+            <AppButton size="sm" variant="danger" :disabled="!selectedCardIds.size" @click="handleDeleteSelectedCards">
+              {{ l(`批量删除 (${selectedCardIds.size})`, `Delete Selected (${selectedCardIds.size})`) }}
+            </AppButton>
             <AppButton size="sm" variant="danger" @click="handleDeleteUnused">{{ l("清空未售库存", "Clear Unsold") }}</AppButton>
           </div>
         </div>
@@ -84,6 +106,18 @@
           :page-size="PAGE_SIZE"
           @update:page="handlePageChange"
         >
+          <template #head-select>
+            <input type="checkbox" class="checkbox checkbox-sm" :checked="isCurrentPageSelected" :disabled="!currentUnusedRows.length" @change="toggleCurrentPageSelection" />
+          </template>
+          <template #select="{ row }">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              :disabled="row.status !== 'UNUSED'"
+              :checked="selectedCardIds.has(row.id)"
+              @change="toggleCardSelection(row.id)"
+            />
+          </template>
           <template #contentPreview="{ value }">
             <code>{{ value }}</code>
           </template>
@@ -94,6 +128,7 @@
             {{ formatDate(value) }}
           </template>
           <template #actions="{ row }">
+            <AppButton v-if="row.status === 'UNUSED'" size="xs" variant="outline" @click="openEditCard(row)">{{ l("编辑", "Edit") }}</AppButton>
             <AppButton v-if="row.status === 'UNUSED'" size="xs" variant="danger" @click="handleDeleteCard(row.id)">{{ l("删除", "Delete") }}</AppButton>
           </template>
         </DataTable>
@@ -113,6 +148,8 @@ import { onDeleteUnusedCards } from "./deleteUnusedCards.telefunc";
 import { onImportCards } from "./importCards.telefunc";
 import { onQueryCards } from "./queryCards.telefunc";
 import { onDeleteCard } from "./deleteCard.telefunc";
+import { onDeleteCards } from "./deleteCards.telefunc";
+import { onUpdateCard } from "./updateCard.telefunc";
 import DataTable from "../../../components/DataTable.vue";
 import StatusTag from "../../../components/StatusTag.vue";
 import AppButton from "../../../components/AppButton.vue";
@@ -128,16 +165,20 @@ const cardPage = ref({ items: [...cards], total: cards.length });
 
 const addModalRef = useTemplateRef<HTMLDialogElement>("addModalRef");
 const importModalRef = useTemplateRef<HTMLDialogElement>("importModalRef");
+const editModalRef = useTemplateRef<HTMLDialogElement>("editModalRef");
 const confirmRef = useTemplateRef<InstanceType<typeof ConfirmDialog>>("confirmRef");
 const message = ref("");
 const errorMessage = ref("");
+const selectedCardIds = ref(new Set<number>());
 
 const filter = reactive({ productId: "", batchNo: "", status: "", startDate: "", endDate: "" });
 
 const singleForm = reactive({ productId: "", content: "", batchNo: "" });
 const importForm = reactive({ productId: "", lines: "", batchNo: "" });
+const editForm = reactive({ id: 0, productId: "", content: "", batchNo: "" });
 
 const columns = computed(() => [
+  { key: "select", label: "" },
   { key: "id", label: "ID" },
   { key: "productName", label: l("商品", "Product") },
   { key: "contentPreview", label: l("卡密预览", "Card Preview") },
@@ -147,6 +188,9 @@ const columns = computed(() => [
   { key: "createdAt", label: l("创建时间", "Created") },
   { key: "actions", label: l("操作", "Actions") },
 ]);
+
+const currentUnusedRows = computed(() => cardPage.value.items.filter((row) => row.status === "UNUSED"));
+const isCurrentPageSelected = computed(() => currentUnusedRows.value.length > 0 && currentUnusedRows.value.every((row) => selectedCardIds.value.has(row.id)));
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString(locale.value === "zh" ? "zh-CN" : "en-US");
@@ -177,6 +221,7 @@ async function fetchPage(page: number) {
   });
   cardPage.value = result;
   currentPage.value = page;
+  selectedCardIds.value = new Set([...selectedCardIds.value].filter((id) => result.items.some((row) => row.id === id)));
 }
 
 async function handleSearch() {
@@ -194,6 +239,35 @@ async function handleReset() {
 
 async function handlePageChange(page: number) {
   await fetchPage(page);
+}
+
+function toggleCardSelection(id: number) {
+  const next = new Set(selectedCardIds.value);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  selectedCardIds.value = next;
+}
+
+function toggleCurrentPageSelection() {
+  const next = new Set(selectedCardIds.value);
+  if (isCurrentPageSelected.value) {
+    for (const row of currentUnusedRows.value) next.delete(row.id);
+  } else {
+    for (const row of currentUnusedRows.value) next.add(row.id);
+  }
+  selectedCardIds.value = next;
+}
+
+function openEditCard(row: Data["cards"][number]) {
+  errorMessage.value = "";
+  editForm.id = row.id;
+  editForm.productId = String(row.productId);
+  editForm.content = row.content ?? "";
+  editForm.batchNo = row.batchNo ?? "";
+  editModalRef.value?.showModal();
 }
 
 async function handleCreateCard() {
@@ -215,6 +289,24 @@ async function handleCreateCard() {
   }
 }
 
+async function handleUpdateCard() {
+  message.value = "";
+  errorMessage.value = "";
+  try {
+    await onUpdateCard({
+      id: editForm.id,
+      productId: Number(editForm.productId),
+      content: editForm.content,
+      batchNo: editForm.batchNo,
+    });
+    editModalRef.value?.close();
+    message.value = l("卡密已更新", "Card updated");
+    await fetchPage(currentPage.value);
+  } catch (error) {
+    errorMessage.value = normalizeTelefuncError(error, l("保存失败", "Save failed"));
+  }
+}
+
 async function handleImportCards() {
   message.value = "";
   errorMessage.value = "";
@@ -231,6 +323,28 @@ async function handleImportCards() {
     await fetchPage(1);
   } catch (error) {
     errorMessage.value = normalizeTelefuncError(error, l("导入失败", "Import failed"));
+  }
+}
+
+async function handleDeleteSelectedCards() {
+  const ids = [...selectedCardIds.value];
+  if (!ids.length) return;
+  const ok = await confirmRef.value?.confirm({
+    title: l("批量删除卡密", "Delete Cards"),
+    message: l(`确认删除选中的 ${ids.length} 条未售卡密？已售卡密不会被删除。`, `Delete ${ids.length} selected unused card(s)? Sold cards will not be deleted.`),
+    confirmText: l("删除", "Delete"),
+    danger: true,
+  });
+  if (!ok) return;
+  message.value = "";
+  errorMessage.value = "";
+  try {
+    const result = await onDeleteCards({ ids });
+    selectedCardIds.value = new Set();
+    message.value = l(`已删除 ${result.count} 条卡密`, `${result.count} card(s) deleted`);
+    await fetchPage(currentPage.value);
+  } catch (error) {
+    errorMessage.value = normalizeTelefuncError(error, l("删除失败", "Delete failed"));
   }
 }
 

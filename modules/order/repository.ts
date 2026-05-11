@@ -13,6 +13,7 @@ export function findOrderWithProduct(prisma: PrismaClient, orderNo: string) {
     include: {
       product: true,
       deliveries: true,
+      cards: true,
     },
   });
 }
@@ -121,5 +122,15 @@ export function closeOrderRecord(prisma: PrismaClient, id: number) {
       status: "CLOSED",
       closedAt: new Date(),
     },
+  });
+}
+
+export async function deleteOrderRecords(prisma: PrismaClient, ids: number[]) {
+  return prisma.$transaction(async (tx) => {
+    await tx.orderDelivery.deleteMany({ where: { orderId: { in: ids } } });
+    await tx.paymentLog.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
+    await tx.telegramLog.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
+    await tx.card.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
+    return tx.order.deleteMany({ where: { id: { in: ids } } });
   });
 }

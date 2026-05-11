@@ -98,6 +98,46 @@ export function listCardRecordsPaged(
 
 export function deleteCardById(prisma: PrismaClient, id: number) {
   return prisma.card.deleteMany({
-    where: { id, status: "UNUSED" },
+    where: { id, status: "UNUSED", orderId: null },
+  });
+}
+
+export function deleteCardsByIds(prisma: PrismaClient, ids: number[]) {
+  return prisma.card.deleteMany({
+    where: {
+      id: { in: ids },
+      status: "UNUSED",
+      orderId: null,
+    },
+  });
+}
+
+export function updateUnusedCardById(
+  prisma: PrismaClient,
+  id: number,
+  input: {
+    productId: number;
+    content: string;
+    batchNo?: string | null;
+  },
+) {
+  return prisma.card.updateMany({
+    where: {
+      id,
+      status: "UNUSED",
+      orderId: null,
+    },
+    data: {
+      productId: input.productId,
+      content: input.content,
+      batchNo: input.batchNo ?? null,
+    },
+  });
+}
+
+export function findCardById(prisma: PrismaClient, id: number) {
+  return prisma.card.findUnique({
+    where: { id },
+    include: { product: true },
   });
 }

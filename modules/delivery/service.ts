@@ -4,73 +4,160 @@ import { logger } from "../../lib/logger";
 import { notifyDeliveryFailed, notifyDeliverySuccess } from "../notify/service";
 import { conflictError, notFoundError } from "../../lib/app-error";
 import { allocateCardsForOrder } from "../inventory/allocator";
-import { updateOrderDeliveryState } from "../order/repository";
 
-export async function deliverOrder(prisma: PrismaClient, orderNo: string) {
+function parseDeliveryItems(contentSnapshot: string) {
+  try {
+    const parsed = JSON.parse(contentSnapshot) as unknown;
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [contentSnapshot];
+  } catch {
+    return [contentSnapshot];
+  }
+}
+
+function getSuccessfulDeliveryItems(deliveries: Array<{ contentSnapshot: string; status: string }>) {
+  return deliveries.filter((item) => item.status === "SUCCESS").flatMap((item) => parseDeliveryItems(item.contentSnapshot));
+}
+
+async function getDeliveredItems(prisma: PrismaClient, orderNo: string) {
   const order = await prisma.order.findUnique({
     where: { orderNo },
-    include: {
-      product: true,
-      deliveries: true,
-    },
+    include: { cards: true, deliveries: true },
   });
 
-  if (!order) {
-    throw notFoundError("订单不存在", "ORDER_NOT_FOUND");
+  if (!order) return null;
+  const items = getSuccessfulDeliveryItems(order.deliveries);
+  const deliveredItems = items.length > 0 ? items : order.cards.map((card) => card.content);
+  if (order.deliveryStatus !== "DELIVERED" && deliveredItems.length === 0) return null;
+  return {
+    success: true,
+    items: deliveredItems,
+  };
+}
+
+async function waitForConcurrentDelivery(prisma: PrismaClient, orderNo: string) {
+  for (let index = 0; index < 5; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const delivered = await getDeliveredItems(prisma, orderNo);
+    if (delivered) return delivered;
   }
 
-  if (order.deliveryStatus === "DELIVERED") {
-    return {
-      success: true,
-      items: order.deliveries.map((item) => item.contentSnapshot),
-    };
-  }
+  return null;
+}
 
-  if (order.paymentStatus !== "PAID") {
-    throw conflictError("订单尚未支付", "ORDER_NOT_PAID");
-  }
-
+export async function deliverOrder(prisma: PrismaClient, orderNo: string) {
   try {
-    const cards = await allocateCardsForOrder(prisma, order.id, order.productId, order.quantity);
-    const contents = cards.map((card) => card.content);
+    const result = await prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { orderNo },
+        include: {
+          product: true,
+          cards: true,
+          deliveries: true,
+        },
+      });
 
-    await prisma.orderDelivery.create({
-      data: {
-        orderId: order.id,
-        deliveryType: "CARD",
-        contentSnapshot: JSON.stringify(contents),
-        status: "SUCCESS",
-      },
-    });
+      if (!order) {
+        throw notFoundError("订单不存在", "ORDER_NOT_FOUND");
+      }
 
-    await updateOrderDeliveryState(prisma, order.orderNo, {
-      status: "DELIVERED",
-      deliveryStatus: "DELIVERED",
-      deliveredAt: new Date(),
-    });
+      const existingItems = getSuccessfulDeliveryItems(order.deliveries);
+      const deliveredItems = existingItems.length > 0 ? existingItems : order.cards.map((card) => card.content);
+      if (order.deliveryStatus === "DELIVERED" || deliveredItems.length > 0) {
+        if (order.deliveryStatus !== "DELIVERED") {
+          await tx.order.update({
+            where: { orderNo },
+            data: {
+              status: "DELIVERED",
+              deliveryStatus: "DELIVERED",
+              deliveredAt: order.deliveredAt ?? new Date(),
+            },
+          });
+        }
 
-    try {
-      await notifyDeliverySuccess({
-        prisma,
-        orderId: order.id,
-        orderNo: order.orderNo,
-        queryToken: order.queryToken,
-        productName: order.productNameSnapshot,
-        quantity: order.quantity,
+        return {
+          success: true,
+          items: deliveredItems,
+          notify: false,
+          order,
+        };
+      }
+
+      if (order.paymentStatus !== "PAID") {
+        throw conflictError("订单尚未支付", "ORDER_NOT_PAID");
+      }
+
+      const cards = await allocateCardsForOrder(tx, order.id, order.productId, order.quantity);
+      const contents = cards.map((card) => card.content);
+
+      await tx.orderDelivery.create({
+        data: {
+          orderId: order.id,
+          deliveryType: "CARD",
+          contentSnapshot: JSON.stringify(contents),
+          status: "SUCCESS",
+        },
+      });
+
+      await tx.order.update({
+        where: { orderNo },
+        data: {
+          status: "DELIVERED",
+          deliveryStatus: "DELIVERED",
+          deliveredAt: new Date(),
+        },
+      });
+
+      return {
+        success: true,
         items: contents,
-      });
-    } catch (error) {
-      logger.error(error instanceof Error ? error : String(error), {
-        event: "telegram.delivery_success.failed",
-        orderNo: order.orderNo,
-      });
+        notify: true,
+        order,
+      };
+    });
+
+    if (result.notify) {
+      try {
+        await notifyDeliverySuccess({
+          prisma,
+          orderId: result.order.id,
+          orderNo: result.order.orderNo,
+          queryToken: result.order.queryToken,
+          productName: result.order.productNameSnapshot,
+          quantity: result.order.quantity,
+          items: result.items,
+        });
+      } catch (error) {
+        logger.error(error instanceof Error ? error : String(error), {
+          event: "telegram.delivery_success.failed",
+          orderNo: result.order.orderNo,
+        });
+      }
     }
 
     return {
       success: true,
-      items: contents,
+      items: result.items,
     };
   } catch (error) {
+    const delivered = await waitForConcurrentDelivery(prisma, orderNo);
+    if (delivered) return delivered;
+
+    const order = await prisma.order.findUnique({
+      where: { orderNo },
+    });
+
+    if (!order) {
+      throw error;
+    }
+
+    await prisma.orderDelivery.deleteMany({
+      where: {
+        orderId: order.id,
+        deliveryType: "CARD",
+        status: "FAILED",
+      },
+    });
+
     await prisma.orderDelivery.create({
       data: {
         orderId: order.id,
@@ -80,10 +167,13 @@ export async function deliverOrder(prisma: PrismaClient, orderNo: string) {
       },
     });
 
-    await updateOrderDeliveryState(prisma, order.orderNo, {
-      status: "FAILED",
-      deliveryStatus: "FAILED",
-      deliveredAt: null,
+    await prisma.order.update({
+      where: { orderNo: order.orderNo },
+      data: {
+        status: "FAILED",
+        deliveryStatus: "FAILED",
+        deliveredAt: null,
+      },
     });
 
     try {
