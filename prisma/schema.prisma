@@ -193,7 +193,7 @@ model Card {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   product   Product    @relation(fields: [productId], references: [id])
-  order     Order?     @relation(fields: [orderId], references: [id])
+  order     Order?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([productId, status])
   @@index([orderId])
@@ -268,7 +268,7 @@ model PaymentLog {
   verifyStatus   PaymentVerifyStatus @default(PENDING)
   message        String?
   createdAt      DateTime            @default(now())
-  order          Order?              @relation(fields: [orderId], references: [id])
+  order          Order?              @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([provider, createdAt])
   @@index([orderNo])
@@ -315,7 +315,7 @@ model TelegramLog {
   error             String?
   triggeredBy       String?
   createdAt         DateTime           @default(now())
-  order             Order?             @relation(fields: [orderId], references: [id])
+  order             Order?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
   config            TelegramConfig?    @relation(fields: [configId], references: [id], onDelete: SetNull)
 
   @@index([scene, createdAt])

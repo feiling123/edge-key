@@ -263,7 +263,16 @@ export async function deleteOrders(input: { ids: number[] }) {
     throw badRequestError("请选择要删除的订单", "ORDER_IDS_REQUIRED");
   }
 
-  const result = await deleteOrderRecords(prisma, ids);
+  let result: Awaited<ReturnType<typeof deleteOrderRecords>>;
+  try {
+    result = await deleteOrderRecords(prisma, ids);
+  } catch (error) {
+    logger.error("delete orders failed", {
+      ids,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
   await logAdminOperation(
     {
       action: "DELETE_ORDERS",

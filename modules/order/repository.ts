@@ -126,11 +126,9 @@ export function closeOrderRecord(prisma: PrismaClient, id: number) {
 }
 
 export async function deleteOrderRecords(prisma: PrismaClient, ids: number[]) {
-  return prisma.$transaction(async (tx) => {
-    await tx.orderDelivery.deleteMany({ where: { orderId: { in: ids } } });
-    await tx.paymentLog.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
-    await tx.telegramLog.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
-    await tx.card.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
-    return tx.order.deleteMany({ where: { id: { in: ids } } });
-  });
+  await prisma.orderDelivery.deleteMany({ where: { orderId: { in: ids } } });
+  await prisma.paymentLog.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
+  await prisma.telegramLog.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
+  await prisma.card.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
+  return prisma.order.deleteMany({ where: { id: { in: ids } } });
 }
