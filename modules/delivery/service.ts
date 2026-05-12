@@ -69,8 +69,8 @@ async function getDeliveredItems(prisma: PrismaClient, orderNo: string) {
 }
 
 async function waitForConcurrentDelivery(prisma: PrismaClient, orderNo: string) {
-  for (let index = 0; index < 5; index += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 120));
+  for (let index = 0; index < 10; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
     const delivered = await getDeliveredItems(prisma, orderNo);
     if (delivered) return delivered;
   }

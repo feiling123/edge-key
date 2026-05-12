@@ -4,6 +4,7 @@ export function listCardRecords(prisma: PrismaClient) {
   return prisma.card.findMany({
     include: {
       product: true,
+      order: { select: { id: true, orderNo: true } },
     },
     orderBy: [{ id: "desc" }],
   });
@@ -25,6 +26,7 @@ export function createCardRecord(
     },
     include: {
       product: true,
+      order: { select: { id: true, orderNo: true } },
     },
   });
 }
@@ -91,7 +93,16 @@ export function listCardRecordsPaged(
   }
   const skip = (params.page - 1) * params.pageSize;
   return Promise.all([
-    prisma.card.findMany({ where, include: { product: true }, orderBy: [{ id: "desc" }], skip, take: params.pageSize }),
+    prisma.card.findMany({
+      where,
+      include: {
+        product: true,
+        order: { select: { id: true, orderNo: true } },
+      },
+      orderBy: [{ id: "desc" }],
+      skip,
+      take: params.pageSize,
+    }),
     prisma.card.count({ where }),
   ]);
 }
@@ -136,7 +147,10 @@ export function updateUnusedCardById(
 export function findCardById(prisma: PrismaClient, id: number) {
   return prisma.card.findUnique({
     where: { id },
-    include: { product: true },
+    include: {
+      product: true,
+      order: { select: { id: true, orderNo: true } },
+    },
   });
 }
 
@@ -145,7 +159,10 @@ export function findCardsByIds(prisma: PrismaClient, ids: number[]) {
     where: {
       id: { in: ids },
     },
-    include: { product: true },
+    include: {
+      product: true,
+      order: { select: { id: true, orderNo: true } },
+    },
   });
 }
 

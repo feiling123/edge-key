@@ -36,7 +36,7 @@
     </aside>
 
     <div class="min-w-0">
-      <div class="mb-5 flex flex-col gap-4 rounded-[22px] border border-base-300 bg-base-100 p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div v-if="showListHeader" class="mb-5 flex flex-col gap-4 rounded-[22px] border border-base-300 bg-base-100 p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
           <h2 class="text-2xl font-black md:text-3xl">{{ t("home.product_list") }}</h2>
         </div>
@@ -46,8 +46,8 @@
             :key="item.value"
             type="button"
             class="rounded-full px-4 py-2 text-sm font-bold transition duration-300 hover:scale-105"
-            :class="sortKey === item.value ? 'bg-primary text-primary-content shadow-sm' : 'bg-base-200 text-base-content/65 hover:bg-primary/10 hover:text-primary'"
-            @click="sortKey = item.value"
+            :class="activeSortKey === item.value ? 'bg-primary text-primary-content shadow-sm' : 'bg-base-200 text-base-content/65 hover:bg-primary/10 hover:text-primary'"
+            @click="setSortKey(item.value)"
           >
             {{ item.label }}
           </button>
@@ -61,27 +61,45 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import emptyCoverUrl from "../assets/empty.jpg";
 import { useI18n } from "../lib/client-i18n";
 import type { CategorySummary, ProductSummary } from "../modules/catalog/types";
 import ProductCardGrid from "./ProductCardGrid.vue";
 
+type SortKey = "default" | "price" | "name";
+
 const props = withDefaults(defineProps<{
   categories: CategorySummary[];
   products: ProductSummary[];
   initialKeyword?: string;
+  showListHeader?: boolean;
+  sortKey?: SortKey;
 }>(), {
   initialKeyword: "",
+  showListHeader: true,
 });
+
+const emit = defineEmits<{
+  "update:sortKey": [value: SortKey];
+  "update:visibleCount": [value: number];
+}>();
 
 const { t } = useI18n();
 const activeCategoryId = ref<number | null>(null);
 const keyword = ref("");
-const sortKey = ref<"default" | "price" | "name">("default");
+const internalSortKey = ref<SortKey>("default");
 
 const categories = computed(() => props.categories);
 const products = computed(() => props.products);
+const showListHeader = computed(() => props.showListHeader);
+const activeSortKey = computed({
+  get: () => props.sortKey ?? internalSortKey.value,
+  set: (value: SortKey) => {
+    internalSortKey.value = value;
+    emit("update:sortKey", value);
+  },
+});
 
 onMounted(() => {
   keyword.value = props.initialKeyword || new URLSearchParams(window.location.search).get("q")?.trim() || "";
@@ -113,14 +131,22 @@ const filteredProducts = computed(() => {
 
 const sortedProducts = computed(() => {
   const items = [...filteredProducts.value];
-  if (sortKey.value === "price") {
+  if (activeSortKey.value === "price") {
     return items.sort((a, b) => a.price - b.price || a.id - b.id);
   }
-  if (sortKey.value === "name") {
+  if (activeSortKey.value === "name") {
     return items.sort((a, b) => a.name.localeCompare(b.name));
   }
   return items;
 });
+
+watch(sortedProducts, (items) => {
+  emit("update:visibleCount", items.length);
+}, { immediate: true });
+
+function setSortKey(value: SortKey) {
+  activeSortKey.value = value;
+}
 
 const emptyMessage = computed(() => keyword.value ? t("home.search_empty") : t("home.empty"));
 </script>

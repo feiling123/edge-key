@@ -75,14 +75,17 @@ const maxPollAttempts = 100;
 
 onMounted(async () => {
   if (!order.value) return;
-  startStatusPolling(1200);
-  if (order.value.paymentStatus !== "UNPAID" || order.value.paymentProvider !== "ALIPAY") return;
-  const params = new URLSearchParams(window.location.search);
-  if (!params.get("out_trade_no")) return;
-  try {
-    const result = await onQueryAlipayPayment({ orderNo: order.value.orderNo });
-    if (result.isPaid || result.alreadyPaid) await refreshOrderStatus();
-  } catch {}
+  if (order.value.paymentStatus === "UNPAID" && order.value.paymentProvider === "ALIPAY") {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("out_trade_no")) {
+      try {
+        const result = await onQueryAlipayPayment({ orderNo: order.value.orderNo });
+        if (result.isPaid || result.alreadyPaid) await refreshOrderStatus();
+      } catch {}
+    }
+  }
+  await refreshOrderStatus();
+  startStatusPolling(order.value?.paymentStatus === "PAID" ? 800 : 1000);
 });
 
 onBeforeUnmount(() => {
@@ -140,7 +143,7 @@ function startStatusPolling(delayMs: number) {
   pollTimer = window.setTimeout(async () => {
     pollAttempts += 1;
     await refreshOrderStatus();
-    startStatusPolling(order.value?.paymentStatus === "PAID" ? 1500 : 3000);
+    startStatusPolling(order.value?.paymentStatus === "PAID" ? 1000 : (pollAttempts < 8 ? 1200 : 3000));
   }, delayMs);
 }
 

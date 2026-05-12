@@ -637,7 +637,33 @@ export async function handlePaymentNotify(
     });
 
     if (!updated) {
-      // 已经被并发回调处理过了
+      // 已经被并发回调处理过时，仍然补一次幂等发货检查，避免只写入 PAID 但发货未完成的窗口被卡住。
+      const latestOrder = await findOrderRecord(prisma, verified.orderNo);
+      if (latestOrder?.paymentStatus === "PAID" && latestOrder.deliveryStatus !== "DELIVERED") {
+        try {
+          await deliverOrder(prisma, latestOrder.orderNo);
+        } catch (error) {
+          writePaymentNotifyDiagnostic({
+            provider,
+            source,
+            reason: "concurrent paid delivery recovery failed",
+            orderNo: latestOrder.orderNo,
+            payload,
+            error,
+          });
+        }
+      }
+      await createNotifyLog(prisma, {
+        orderId: latestOrder?.id ?? order.id,
+        provider,
+        orderNo: verified.orderNo,
+        paymentOrderNo: verified.paymentOrderNo,
+        rawPayload,
+        verifyStatus: "VERIFIED",
+        source,
+        message: "already paid",
+        status: verified.status,
+      });
       return {
         ok: true,
         status: "PAID",

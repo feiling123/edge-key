@@ -45,7 +45,7 @@ function matchesValue(actual: unknown, expected: unknown): boolean {
   return actual === expected;
 }
 
-function matchesWhere(item: Record<string, unknown>, where: Record<string, unknown> = {}) {
+function matchesWhere(item: Record<string, unknown>, where: Record<string, unknown> = {}): boolean {
   return Object.entries(where).every(([key, expected]) => {
     if (key === "OR") {
       return (expected as Array<Record<string, unknown>>).some((condition) => matchesWhere(item, condition));

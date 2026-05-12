@@ -124,6 +124,12 @@
           <template #status="{ value }">
             <StatusTag :type="getCardStatusType(value)">{{ getStatusLabel(value) }}</StatusTag>
           </template>
+          <template #orderId="{ row }">
+            <AppButton v-if="row.orderId && row.orderNo" size="xs" variant="outline" :href="adminHref(`/admin/orders/${row.orderId}`)">
+              {{ row.orderNo }}
+            </AppButton>
+            <span v-else class="text-sm text-base-content/50">-</span>
+          </template>
           <template #createdAt="{ value }">
             {{ formatDate(value) }}
           </template>
@@ -156,9 +162,11 @@ import StatusTag from "../../../components/StatusTag.vue";
 import AppButton from "../../../components/AppButton.vue";
 import type { Data } from "./+data";
 import { useI18n } from "../../../lib/client-i18n";
+import { useAdminPath } from "../../../lib/client-admin-path";
 
 const { cards, products, overview } = useData<Data>();
 const { l, locale } = useI18n();
+const { adminHref } = useAdminPath();
 
 const PAGE_SIZE = 20;
 const currentPage = ref(1);

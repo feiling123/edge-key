@@ -66,7 +66,10 @@
           <h2 class="text-2xl font-black">{{ t("home.latest") }}</h2>
           <p class="mt-1 text-sm text-base-content/60">{{ t("home.latest_subtitle") }}</p>
         </div>
-        <a href="/blog" class="text-sm font-bold text-primary transition hover:scale-105">{{ t("home.view_all") }}</a>
+        <a href="/blog" class="inline-flex w-fit items-center rounded-full bg-base-100 px-4 py-2 text-sm font-black text-primary shadow-sm transition duration-300 hover:-translate-y-0.5 hover:bg-primary hover:text-primary-content">
+          {{ t("home.view_all") }}
+          <svg viewBox="0 0 20 20" class="ml-1 size-5" aria-hidden="true"><path fill="currentColor" d="M11.78 4.22a.75.75 0 0 0-1.06 1.06l3.97 3.97H4.75a.75.75 0 0 0 0 1.5h9.94l-3.97 3.97a.75.75 0 1 0 1.06 1.06l5.25-5.25a.75.75 0 0 0 0-1.06l-5.25-5.25Z"/></svg>
+        </a>
       </div>
       <div class="grid gap-3 md:grid-cols-3">
         <a v-for="post in latestPosts" :key="post.slug" :href="`/blog/${post.slug}`" class="group grid gap-3 rounded-2xl border border-base-200 p-3 transition duration-300 hover:-translate-y-1 hover:border-primary/30 hover:bg-primary/5">
