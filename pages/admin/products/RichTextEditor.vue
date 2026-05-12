@@ -242,8 +242,7 @@ import Image from "@tiptap/extension-image";
 import { TextStyle, Color } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import { useI18n } from "../../../lib/client-i18n";
-
-const MAX_IMAGE_BYTES = 1_500_000;
+import { createImageDataUrlMessages, imageFileToDataUrl, isRemoteImageUrl, remoteImageToDataUrl } from "./image-data-url";
 
 const props = defineProps<{
   modelValue: string;
@@ -526,8 +525,7 @@ async function insertImageFiles(files: File[]) {
 
   try {
     for (const file of images) {
-      assertImageSize(file.size);
-      insertImageDataUrl(await fileToDataUrl(file));
+      insertImageDataUrl(await imageFileToDataUrl(file, createImageDataUrlMessages(l)));
     }
     imageDraft.value = "";
     openPanel.value = null;
@@ -552,7 +550,7 @@ async function insertImageFromRemoteUrl(url: string) {
 
   imageBusy.value = true;
   try {
-    insertImageDataUrl(await remoteImageToDataUrl(url));
+    insertImageDataUrl(await remoteImageToDataUrl(url, createImageDataUrlMessages(l)));
     imageDraft.value = "";
     openPanel.value = null;
     setImageMessage(l("远程图片已转为 Base64。", "Remote image converted to Base64."), "success");
@@ -616,7 +614,7 @@ async function convertRemoteImagesInHtml(html: string) {
     const src = image.getAttribute("src")?.trim();
     if (!src || !isRemoteImageUrl(src) || failedRemoteImages.has(src)) continue;
     try {
-      image.setAttribute("src", await remoteImageToDataUrl(src));
+      image.setAttribute("src", await remoteImageToDataUrl(src, createImageDataUrlMessages(l)));
       changed = true;
     } catch (error) {
       failedRemoteImages.add(src);
@@ -625,38 +623,6 @@ async function convertRemoteImagesInHtml(html: string) {
   }
 
   return changed ? root.innerHTML : html;
-}
-
-async function remoteImageToDataUrl(url: string) {
-  const response = await fetch(url, { mode: "cors", credentials: "omit" });
-  if (!response.ok) {
-    throw new Error(l(`远程图片读取失败：HTTP ${response.status}`, `Remote image request failed: HTTP ${response.status}`));
-  }
-  const blob = await response.blob();
-  if (!blob.type.startsWith("image/")) {
-    throw new Error(l("远程地址不是图片文件。", "The remote URL is not an image."));
-  }
-  assertImageSize(blob.size);
-  return fileToDataUrl(blob);
-}
-
-function fileToDataUrl(file: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error(l("图片读取失败。", "Failed to read image.")));
-    reader.readAsDataURL(file);
-  });
-}
-
-function assertImageSize(size: number) {
-  if (size > MAX_IMAGE_BYTES) {
-    throw new Error(l("图片超过 1.5MB，请压缩后再上传。", "Image exceeds 1.5MB. Compress it before uploading."));
-  }
-}
-
-function isRemoteImageUrl(value: string) {
-  return /^https?:\/\//i.test(value);
 }
 
 function clearImageMessage() {

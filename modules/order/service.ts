@@ -40,6 +40,158 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+type OrderQueryOptions = {
+  waitForSyncMs?: number;
+  pollIntervalMs?: number;
+  waitForDeliveryMs?: number;
+  deliveryPollIntervalMs?: number;
+  deliveryRecoveryAfterMs?: number;
+};
+
+async function waitForPaymentSync(
+  client: PrismaClient,
+  orderNo: string,
+  queryToken: string,
+  currentOrder: NonNullable<Awaited<ReturnType<typeof findOrderWithProduct>>>,
+  options: OrderQueryOptions,
+) {
+  const waitForSyncMs = Math.max(0, Math.min(options.waitForSyncMs ?? 0, 2500));
+  if (waitForSyncMs <= 0 || currentOrder.paymentStatus !== "UNPAID" || currentOrder.status !== "PENDING") {
+    return currentOrder;
+  }
+
+  const pollIntervalMs = Math.max(100, Math.min(options.pollIntervalMs ?? 250, 500));
+  const deadline = Date.now() + waitForSyncMs;
+  let order = currentOrder;
+
+  while (Date.now() < deadline) {
+    await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
+
+    const refreshed = await findOrderWithProduct(client, orderNo);
+    if (!refreshed || refreshed.queryToken !== queryToken) {
+      break;
+    }
+
+    order = refreshed;
+    if (order.paymentStatus !== "UNPAID" || order.status !== "PENDING") {
+      break;
+    }
+  }
+
+  return order;
+}
+
+function hasDeliveryContents(order: NonNullable<Awaited<ReturnType<typeof findOrderWithProduct>>>) {
+  return (
+    order.deliveries.some((item) => item.status === "SUCCESS") ||
+    order.cards.some((card) => card.status === "SOLD")
+  );
+}
+
+async function waitForDeliverySync(
+  client: PrismaClient,
+  orderNo: string,
+  queryToken: string,
+  currentOrder: NonNullable<Awaited<ReturnType<typeof findOrderWithProduct>>>,
+  options: OrderQueryOptions,
+) {
+  const waitForDeliveryMs = Math.max(0, Math.min(options.waitForDeliveryMs ?? 900, 4000));
+  if (currentOrder.paymentStatus === "PAID" && currentOrder.deliveryStatus !== "DELIVERED" && hasDeliveryContents(currentOrder)) {
+    try {
+      await deliverOrder(client, orderNo);
+      const refreshed = await findOrderWithProduct(client, orderNo);
+      if (refreshed && refreshed.queryToken === queryToken) {
+        return refreshed;
+      }
+    } catch (error) {
+      logger.warn("order.query_delivery_reconcile.skipped", {
+        event: "order.query_delivery_reconcile.skipped",
+        orderNo,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (waitForDeliveryMs <= 0 || currentOrder.paymentStatus !== "PAID" || currentOrder.deliveryStatus === "DELIVERED" || hasDeliveryContents(currentOrder)) {
+    return currentOrder;
+  }
+
+  const pollIntervalMs = Math.max(150, Math.min(options.deliveryPollIntervalMs ?? options.pollIntervalMs ?? 250, 600));
+  const recoveryAfterMs = Math.max(200, Math.min(options.deliveryRecoveryAfterMs ?? 650, waitForDeliveryMs));
+  const deadline = Date.now() + waitForDeliveryMs;
+  const startedAt = Date.now();
+  let order = currentOrder;
+  let recoveryAttempted = false;
+
+  while (Date.now() < deadline) {
+    if (!recoveryAttempted && Date.now() - startedAt >= recoveryAfterMs && order.deliveryStatus !== "FAILED") {
+      recoveryAttempted = true;
+      try {
+        await deliverOrder(client, orderNo);
+        const refreshed = await findOrderWithProduct(client, orderNo);
+        if (!refreshed || refreshed.queryToken !== queryToken) {
+          break;
+        }
+        order = refreshed;
+        if (order.paymentStatus !== "PAID" || order.deliveryStatus === "DELIVERED" || hasDeliveryContents(order)) {
+          break;
+        }
+      } catch (error) {
+        logger.warn("order.query_delivery_recovery.skipped", {
+          event: "order.query_delivery_recovery.skipped",
+          orderNo,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
+
+    const refreshed = await findOrderWithProduct(client, orderNo);
+    if (!refreshed || refreshed.queryToken !== queryToken) {
+      break;
+    }
+
+    order = refreshed;
+    if (order.paymentStatus !== "PAID" || order.deliveryStatus === "FAILED" || order.deliveryStatus === "DELIVERED" || hasDeliveryContents(order)) {
+      break;
+    }
+  }
+
+  return order;
+}
+
+function normalizeOrderIds(ids: number[]) {
+  return [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+}
+
+export async function deleteOrdersWithRelations(prisma: PrismaClient, ids: number[]) {
+  const normalizedIds = normalizeOrderIds(ids);
+  if (!normalizedIds.length) {
+    return {
+      ids: normalizedIds,
+      count: 0,
+      orderSummaries: [] as Array<{ id: number; orderNo: string }>,
+    };
+  }
+
+  const orderSummaries = await prisma.order.findMany({
+    where: { id: { in: normalizedIds } },
+    select: {
+      id: true,
+      orderNo: true,
+    },
+  });
+
+  const result = await deleteOrderRecords(prisma, normalizedIds);
+
+  return {
+    ids: normalizedIds,
+    count: result.count,
+    orderSummaries,
+  };
+}
+
 export async function createOrder(input: {
   productId: number;
   quantity: number;
@@ -99,6 +251,7 @@ export async function getOrderForQuery(
   queryToken: string,
   searchParams?: Record<string, string | undefined>,
   prisma?: PrismaClient,
+  options: OrderQueryOptions = {},
 ) {
   const client = prisma ?? getOrderContext().prisma;
   let order = await findOrderWithProduct(client, orderNo);
@@ -124,38 +277,8 @@ export async function getOrderForQuery(
     }
   }
 
-  // notify 与 return 几乎同时到达时，return 这次读取可能正好卡在
-  // “订单已支付但异步发货还没写完”的瞬间。先短暂重查；如果仍未发货，
-  // 用数据库中的订单和库存自愈一次，避免回调中断后订单长期停在已支付未发货。
-  if (order.paymentStatus === "PAID" && order.deliveryStatus !== "DELIVERED") {
-    for (let index = 0; index < 3; index += 1) {
-      await sleep(150);
-      const refreshed = await findOrderWithProduct(client, orderNo);
-      if (!refreshed || refreshed.queryToken !== queryToken) {
-        break;
-      }
-      order = refreshed;
-      if (order.deliveryStatus === "DELIVERED") {
-        break;
-      }
-    }
-
-    if (order.deliveryStatus !== "DELIVERED") {
-      try {
-        await deliverOrder(client, orderNo);
-      } catch (error) {
-        logger.error(error instanceof Error ? error : String(error), {
-          event: "order.query_delivery_recovery.failed",
-          orderNo,
-        });
-      }
-
-      const refreshed = await findOrderWithProduct(client, orderNo);
-      if (refreshed && refreshed.queryToken === queryToken) {
-        order = refreshed;
-      }
-    }
-  }
+  order = await waitForPaymentSync(client, orderNo, queryToken, order, options);
+  order = await waitForDeliverySync(client, orderNo, queryToken, order, options);
 
   const successfulDeliveryContents = order.deliveries.filter((item) => item.status === "SUCCESS").flatMap((item) => {
     try {
@@ -260,28 +383,21 @@ export async function deleteOrders(input: { ids: number[] }) {
   const adminContext = getAdminContext();
   const { prisma } = adminContext;
   const adminId = Number(adminContext.session?.user?.id);
-  const ids = [...new Set(input.ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  const ids = normalizeOrderIds(input.ids);
 
   if (!ids.length) {
     throw badRequestError("请选择要删除的订单", "ORDER_IDS_REQUIRED");
   }
 
-  const orderSummaries = await prisma.order.findMany({
-    where: { id: { in: ids } },
-    select: {
-      id: true,
-      orderNo: true,
-    },
-  });
-  let result: Awaited<ReturnType<typeof deleteOrderRecords>>;
+  let result: Awaited<ReturnType<typeof deleteOrdersWithRelations>>;
   try {
-    result = await deleteOrderRecords(prisma, ids);
+    result = await deleteOrdersWithRelations(prisma, ids);
   } catch (error) {
     logger.error("delete orders failed", {
       ids,
       error: error instanceof Error ? error.message : String(error),
     });
-    throw error;
+    throw conflictError("订单关联数据清理失败，请稍后重试", "ORDER_DELETE_FAILED");
   }
   await logAdminOperation(
     {
@@ -297,7 +413,7 @@ export async function deleteOrders(input: { ids: number[] }) {
   );
 
   const requestContext = getRequestContext();
-  for (const order of orderSummaries) {
+  for (const order of result.orderSummaries) {
     try {
       await notifyOrderDeleted({
         prisma,

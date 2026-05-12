@@ -117,7 +117,7 @@ export function deleteCardsByIds(prisma: PrismaClient, ids: number[]) {
   return prisma.card.deleteMany({
     where: {
       id: { in: ids },
-      status: { not: "LOCKED" },
+      status: { in: ["UNUSED", "SOLD", "DISABLED"] },
     },
   });
 }
@@ -173,6 +173,7 @@ export function findCardsByOrderIds(prisma: PrismaClient, orderIds: number[]) {
     },
     select: {
       id: true,
+      status: true,
     },
   });
 }

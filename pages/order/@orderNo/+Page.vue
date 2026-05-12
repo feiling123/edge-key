@@ -29,7 +29,6 @@
           </div>
           <div v-if="order.paymentStatus === 'UNPAID'" class="mt-4">
             <AppButton size="sm" variant="primary" :loading="paying" @click="handleContinuePay">{{ t("order.continue_pay") }}</AppButton>
-            <p v-if="syncing" class="mt-2 text-sm text-base-content/60">{{ t("order.syncing") }}</p>
             <p v-if="paymentError" class="mt-2 text-sm text-error">{{ paymentError }}</p>
           </div>
         </div>
@@ -41,6 +40,7 @@
           <div v-if="order.deliveryContents.length" class="space-y-2">
             <pre v-for="content in order.deliveryContents" :key="content" class="rounded-box bg-base-200 p-3 text-sm">{{ content }}</pre>
           </div>
+          <p v-else-if="showDeliverySyncNotice" class="text-sm text-base-content/60">{{ t("order.syncing") }}</p>
           <p v-else class="text-sm text-base-content/60">{{ deliveryEmptyText }}</p>
         </div>
       </article>
@@ -71,21 +71,26 @@ const paymentError = ref("");
 const syncing = ref(false);
 let pollTimer: ReturnType<typeof window.setTimeout> | undefined;
 let pollAttempts = 0;
+let refreshInFlight: Promise<void> | undefined;
 const maxPollAttempts = 100;
 
 onMounted(async () => {
   if (!order.value) return;
+
+  syncing.value = shouldPoll(order.value);
+
   if (order.value.paymentStatus === "UNPAID" && order.value.paymentProvider === "ALIPAY") {
     const params = new URLSearchParams(window.location.search);
     if (params.get("out_trade_no")) {
       try {
         const result = await onQueryAlipayPayment({ orderNo: order.value.orderNo });
-        if (result.isPaid || result.alreadyPaid) await refreshOrderStatus();
+        if (result.isPaid || result.alreadyPaid) pollAttempts = 0;
       } catch {}
     }
   }
-  await refreshOrderStatus();
-  startStatusPolling(order.value?.paymentStatus === "PAID" ? 800 : 1000);
+
+  await refreshOrderStatus({ waitForSync: true });
+  startStatusPolling(nextPollDelay());
 });
 
 onBeforeUnmount(() => {
@@ -116,8 +121,21 @@ async function handleContinuePay() {
 function shouldPoll(current: Data["order"]) {
   if (!current || current.deliveryStatus === "DELIVERED") return false;
   if (current.paymentStatus === "PAID") return true;
-  return current.paymentStatus === "UNPAID" && current.status !== "CLOSED";
+  return current.paymentStatus === "UNPAID" && current.status === "PENDING";
 }
+
+const showDeliverySyncNotice = computed(() => {
+  const current = order.value;
+  if (!current || current.deliveryContents.length) return false;
+  if (current.paymentStatus === "UNPAID" && current.status === "PENDING") return true;
+
+  return Boolean(
+    current &&
+      syncing.value &&
+      current.paymentStatus === "PAID" &&
+      current.deliveryStatus !== "DELIVERED",
+  );
+});
 
 const deliveryEmptyText = computed(() => {
   if (!order.value) return t("order.delivery_empty");
@@ -132,6 +150,15 @@ function stopStatusPolling() {
   syncing.value = false;
 }
 
+function nextPollDelay() {
+  if (!order.value) return 1000;
+  if (order.value.paymentStatus === "PAID") {
+    return pollAttempts < 8 ? 600 : 1500;
+  }
+  if (pollAttempts < 6) return 700;
+  return pollAttempts < 20 ? 2000 : 5000;
+}
+
 function startStatusPolling(delayMs: number) {
   if (!order.value || !shouldPoll(order.value) || pollAttempts >= maxPollAttempts) {
     stopStatusPolling();
@@ -142,12 +169,22 @@ function startStatusPolling(delayMs: number) {
   syncing.value = true;
   pollTimer = window.setTimeout(async () => {
     pollAttempts += 1;
-    await refreshOrderStatus();
-    startStatusPolling(order.value?.paymentStatus === "PAID" ? 1000 : (pollAttempts < 8 ? 1200 : 3000));
+    await refreshOrderStatus({ waitForSync: pollAttempts <= 6 });
+    startStatusPolling(nextPollDelay());
   }, delayMs);
 }
 
-async function refreshOrderStatus() {
+async function refreshOrderStatus(options: { waitForSync?: boolean } = {}) {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = doRefreshOrderStatus(options).finally(() => {
+    refreshInFlight = undefined;
+  });
+
+  return refreshInFlight;
+}
+
+async function doRefreshOrderStatus(options: { waitForSync?: boolean }) {
   const current = order.value;
   if (!current) return;
 
@@ -156,13 +193,21 @@ async function refreshOrderStatus() {
     latest = await onQueryOrder({
       orderNo: current.orderNo,
       queryToken: current.queryToken,
+      waitForSync: options.waitForSync,
     });
   } catch {
     return;
   }
 
   if (!latest) return;
+  if (`${latest.status}:${latest.paymentStatus}:${latest.deliveryStatus}` !== `${current.status}:${current.paymentStatus}:${current.deliveryStatus}`) {
+    pollAttempts = 0;
+  }
   order.value = latest;
+  syncing.value = shouldPoll(latest);
+  if (!syncing.value) {
+    stopStatusPolling();
+  }
   saveLocalOrder({
     orderNo: latest.orderNo,
     queryToken: latest.queryToken,

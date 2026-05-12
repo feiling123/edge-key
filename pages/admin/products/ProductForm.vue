@@ -65,10 +65,35 @@
           <span class="label-text font-medium">{{ l("副标题", "Subtitle") }}</span>
           <input v-model="form.subtitle" class="input input-bordered w-full" />
         </label>
-        <label class="flex flex-col gap-1.5">
-          <span class="label-text font-medium">{{ l("商品封面（图片链接）", "Cover Image URL") }}</span>
-          <input v-model="form.coverImage" class="input input-bordered w-full" placeholder="https://..." />
-        </label>
+        <div class="flex flex-col gap-1.5">
+          <span class="label-text font-medium">{{ l("商品封面（链接 / 上传 / Base64）", "Cover Image (URL / Upload / Base64)") }}</span>
+          <div class="flex gap-2 max-sm:flex-col">
+            <input
+              v-model="form.coverImage"
+              class="input input-bordered w-full"
+              :placeholder="l('支持 https://... 或 data:image/... ', 'Supports https://... or data:image/...')"
+            />
+            <input ref="coverFileInputRef" type="file" accept="image/*" class="hidden" @change="handleCoverImageFile" />
+            <AppButton variant="outline" :loading="coverImageBusy" @click="openCoverImagePicker">
+              {{ coverImageBusy ? l("处理中...", "Processing...") : l("上传图片", "Upload") }}
+            </AppButton>
+            <AppButton
+              variant="outline"
+              :loading="coverImageBusy"
+              :disabled="coverImageBusy || !isRemoteCoverImage"
+              @click="convertRemoteCoverImage"
+            >
+              {{ coverImageBusy ? l("处理中...", "Processing...") : l("转为 Base64", "Convert to Base64") }}
+            </AppButton>
+          </div>
+          <p class="text-xs text-base-content/60">{{ l("可直接填写图片地址，也可上传图片后自动转成 Base64 保存。", "Paste an image URL or upload a file to store it as Base64.") }}</p>
+          <p v-if="coverImageMessage" class="text-xs" :class="coverImageMessageType === 'error' ? 'text-error' : 'text-success'">
+            {{ coverImageMessage }}
+          </p>
+          <div v-if="form.coverImage" class="overflow-hidden rounded-box border border-base-300 bg-base-200">
+            <img :src="form.coverImage" :alt="l('商品封面预览', 'Cover image preview')" class="max-h-48 w-full object-cover" />
+          </div>
+        </div>
       </div>
 
       <div class="flex flex-col gap-1.5">
@@ -93,7 +118,7 @@
 
 <script setup lang="ts">
 import { normalizeTelefuncError } from "../../../lib/app-error";
-import { reactive, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import AppButton from "../../../components/AppButton.vue";
 import { formatCents } from "../../../lib/utils/money";
 import RichTextEditor from "./RichTextEditor.vue";
@@ -101,6 +126,7 @@ import { onSaveProduct } from "./saveProduct.telefunc";
 import { createProductFormState, type ProductFormState } from "./form";
 import { useAdminPath } from "../../../lib/client-admin-path";
 import { useI18n } from "../../../lib/client-i18n";
+import { createImageDataUrlMessages, imageFileToDataUrl, isRemoteImageUrl, remoteImageToDataUrl } from "./image-data-url";
 
 const props = defineProps<{
   title: string;
@@ -114,6 +140,67 @@ const { l } = useI18n();
 const saving = ref(false);
 const saved = ref(false);
 const errorMessage = ref("");
+const coverFileInputRef = ref<HTMLInputElement | null>(null);
+const coverImageBusy = ref(false);
+const coverImageMessage = ref("");
+const coverImageMessageType = ref<"success" | "error">("success");
+const isRemoteCoverImage = computed(() => isRemoteImageUrl(form.coverImage.trim()));
+
+function openCoverImagePicker() {
+  coverFileInputRef.value?.click();
+}
+
+async function handleCoverImageFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = Array.from(input.files ?? []).find((item) => item.type.startsWith("image/"));
+  input.value = "";
+
+  if (!file) {
+    setCoverImageMessage(l("请选择图片文件。", "Choose an image file."), "error");
+    return;
+  }
+
+  coverImageBusy.value = true;
+  clearCoverImageMessage();
+
+  try {
+    form.coverImage = await imageFileToDataUrl(file, createImageDataUrlMessages(l));
+    setCoverImageMessage(l("封面图片已转为 Base64。", "Cover image converted to Base64."), "success");
+  } catch (error) {
+    setCoverImageMessage(error instanceof Error ? error.message : l("图片处理失败", "Image processing failed"), "error");
+  } finally {
+    coverImageBusy.value = false;
+  }
+}
+
+async function convertRemoteCoverImage() {
+  const url = form.coverImage.trim();
+  if (!isRemoteImageUrl(url)) {
+    setCoverImageMessage(l("请先填写远程图片地址。", "Enter a remote image URL first."), "error");
+    return;
+  }
+
+  coverImageBusy.value = true;
+  clearCoverImageMessage();
+
+  try {
+    form.coverImage = await remoteImageToDataUrl(url, createImageDataUrlMessages(l));
+    setCoverImageMessage(l("远程图片已转为 Base64。", "Remote image converted to Base64."), "success");
+  } catch (error) {
+    setCoverImageMessage(error instanceof Error ? error.message : l("图片处理失败", "Image processing failed"), "error");
+  } finally {
+    coverImageBusy.value = false;
+  }
+}
+
+function clearCoverImageMessage() {
+  coverImageMessage.value = "";
+}
+
+function setCoverImageMessage(message: string, type: "success" | "error") {
+  coverImageMessage.value = message;
+  coverImageMessageType.value = type;
+}
 
 async function handleSave() {
   saving.value = true;

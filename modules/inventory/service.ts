@@ -1,7 +1,8 @@
 import { getContext } from "telefunc";
 import type { PrismaClient } from "../../generated/prisma/client";
-import { badRequestError } from "../../lib/app-error";
+import { badRequestError, conflictError } from "../../lib/app-error";
 import { getAdminContext, logAdminOperation } from "../auth/service";
+import { logger } from "../../lib/logger";
 import { parseCardLines } from "./importer";
 import {
   countCardStats,
@@ -16,7 +17,7 @@ import {
   listCardRecordsPaged,
   updateUnusedCardById,
 } from "./repository";
-import { deleteOrders } from "../order/service";
+import { deleteOrdersWithRelations } from "../order/service";
 
 function getInventoryContext() {
   return getContext<{ prisma: PrismaClient }>();
@@ -28,6 +29,24 @@ function previewCard(content: string) {
   }
 
   return `${content.slice(0, 4)}****${content.slice(-4)}`;
+}
+
+function getDeletableCardIds(cards: Array<{ id: number; status: string }>) {
+  return cards.filter((item) => item.status !== "LOCKED").map((item) => item.id);
+}
+
+async function deleteCardsOrThrow(prisma: PrismaClient, ids: number[], context: Record<string, unknown>) {
+  try {
+    return await deleteCardsByIds(prisma, ids);
+  } catch (error) {
+    logger.error("inventory.delete_cards.failed", {
+      event: "inventory.delete_cards.failed",
+      ids,
+      ...context,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw conflictError("卡密删除失败，请稍后重试", "CARD_DELETE_FAILED");
+  }
 }
 
 export async function getInventoryOverview(prisma?: PrismaClient) {
@@ -181,10 +200,20 @@ export async function deleteCard(input: { id: number }) {
   let idsToDelete = [input.id];
   if (card?.orderId) {
     const orderCards = await findCardsByOrderIds(prisma, [card.orderId]);
-    idsToDelete = [...new Set([...idsToDelete, ...orderCards.map((item) => item.id)])];
-    await deleteOrders({ ids: [card.orderId] });
+    idsToDelete = [...new Set([...idsToDelete, ...getDeletableCardIds(orderCards)])];
+    try {
+      await deleteOrdersWithRelations(prisma, [card.orderId]);
+    } catch (error) {
+      logger.error("inventory.delete_sold_card.order_cleanup_failed", {
+        event: "inventory.delete_sold_card.order_cleanup_failed",
+        cardId: input.id,
+        orderId: card.orderId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw conflictError("关联订单清理失败，已售卡密暂时无法删除", "CARD_DELETE_ORDER_FAILED");
+    }
   }
-  const result = await deleteCardsByIds(prisma, idsToDelete);
+  const result = await deleteCardsOrThrow(prisma, idsToDelete, { cardId: input.id, orderId: card?.orderId ?? null });
   if (result.count === 0) throw badRequestError("卡密不存在或锁定中，无法删除", "CARD_DELETE_FAILED");
   await logAdminOperation({ action: "DELETE_CARD", targetType: "Card", targetId: String(input.id), detail: "" }, { prisma, adminId });
   return { id: input.id };
@@ -202,10 +231,20 @@ export async function deleteCards(input: { ids: number[] }) {
   let idsToDelete = ids;
   if (orderIds.length) {
     const orderCards = await findCardsByOrderIds(prisma, orderIds);
-    idsToDelete = [...new Set([...idsToDelete, ...orderCards.map((item) => item.id)])];
-    await deleteOrders({ ids: orderIds });
+    idsToDelete = [...new Set([...idsToDelete, ...getDeletableCardIds(orderCards)])];
+    try {
+      await deleteOrdersWithRelations(prisma, orderIds);
+    } catch (error) {
+      logger.error("inventory.delete_sold_cards.order_cleanup_failed", {
+        event: "inventory.delete_sold_cards.order_cleanup_failed",
+        ids,
+        orderIds,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw conflictError("关联订单清理失败，已售卡密暂时无法删除", "CARD_DELETE_ORDER_FAILED");
+    }
   }
-  const result = await deleteCardsByIds(prisma, idsToDelete);
+  const result = await deleteCardsOrThrow(prisma, idsToDelete, { requestedIds: ids, orderIds });
   await logAdminOperation(
     {
       action: "DELETE_CARDS",

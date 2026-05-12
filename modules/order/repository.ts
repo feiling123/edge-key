@@ -135,14 +135,10 @@ export async function deleteOrderRecords(prisma: PrismaClient, ids: number[]) {
   const orderNos = orders.map((order) => order.orderNo).filter(Boolean);
 
   await prisma.orderDelivery.deleteMany({ where: { orderId: { in: ids } } });
-  await prisma.paymentLog.deleteMany({
-    where: {
-      OR: [
-        { orderId: { in: ids } },
-        ...(orderNos.length ? [{ orderNo: { in: orderNos } }] : []),
-      ],
-    },
-  });
+  await prisma.paymentLog.deleteMany({ where: { orderId: { in: ids } } });
+  if (orderNos.length) {
+    await prisma.paymentLog.deleteMany({ where: { orderNo: { in: orderNos } } });
+  }
   await prisma.telegramLog.updateMany({ where: { orderId: { in: ids } }, data: { orderId: null } });
   await prisma.card.updateMany({
     where: {
