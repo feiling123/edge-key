@@ -11,7 +11,12 @@
     </section>
   </div>
 
-  <div v-else class="drawer lg:drawer-open min-h-screen bg-base-200">
+  <div
+    v-else
+    class="drawer lg:drawer-open min-h-screen bg-base-200"
+    @click.capture="handleAdminRouteClick"
+    @submit.capture="handleAdminFormSubmit"
+  >
     <input id="admin-drawer" type="checkbox" class="drawer-toggle" />
     <div class="drawer-content flex flex-col min-w-0">
       <div class="navbar bg-base-100 border-b border-base-300 w-full lg:hidden sticky top-0 z-40 shadow-sm">
@@ -195,9 +200,6 @@ const breadcrumbs = computed((): Crumb[] => {
 });
 
 onMounted(() => {
-  rewriteAdminLinks();
-  const observer = new MutationObserver(() => rewriteAdminLinks());
-  observer.observe(document.body, { childList: true, subtree: true });
   if (needsLogin.value) {
     window.location.href = `${adminBase.value}/login?redirect=${encodeURIComponent(publicCurrentPath.value)}`;
   }
@@ -210,15 +212,37 @@ function adminHref(path = "/admin") {
   return path;
 }
 
-function rewriteAdminLinks() {
-  if (adminBase.value === "/admin" || typeof document === "undefined") return;
-  for (const anchor of document.querySelectorAll<HTMLAnchorElement>('a[href^="/admin"]')) {
-    const url = new URL(anchor.href);
-    anchor.setAttribute("href", `${adminHref(url.pathname)}${url.search}${url.hash}`);
-  }
-  for (const form of document.querySelectorAll<HTMLFormElement>('form[action^="/admin"]')) {
-    const url = new URL(form.action);
-    form.action = `${adminHref(url.pathname)}${url.search}`;
-  }
+function adminRouteUrl(url: URL) {
+  return `${adminHref(url.pathname)}${url.search}${url.hash}`;
+}
+
+function handleAdminRouteClick(event: MouseEvent) {
+  if (adminBase.value === "/admin" || typeof window === "undefined") return;
+
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+
+  const anchor = target.closest<HTMLAnchorElement>('a[href^="/admin"]');
+  if (!anchor || anchor.download) return;
+
+  const url = new URL(anchor.href);
+  if (url.origin !== window.location.origin) return;
+
+  anchor.href = adminRouteUrl(url);
+}
+
+function handleAdminFormSubmit(event: SubmitEvent) {
+  if (adminBase.value === "/admin" || typeof window === "undefined") return;
+
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) return;
+
+  const action = form.getAttribute("action");
+  if (!action?.startsWith("/admin")) return;
+
+  const url = new URL(form.action);
+  if (url.origin !== window.location.origin) return;
+
+  form.action = adminRouteUrl(url);
 }
 </script>

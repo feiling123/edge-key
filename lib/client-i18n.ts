@@ -101,7 +101,7 @@ const messages = {
     "order.delivery_failed_empty": "订单已支付，但自动发货暂时失败，系统会继续尝试或请联系客服处理。",
     "order.no_pay_url": "未获取到支付链接",
     "order.pay_failed": "拉起支付失败",
-    "order.syncing": "正在同步支付状态，请稍候...",
+    "order.syncing": "正在同步支付状态，请稍后....",
     "blog.title": "博客",
     "blog.subtitle": "产品更新、部署指南和运营说明集中在这里。",
     "blog.categories": "博客分类",

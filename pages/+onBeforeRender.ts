@@ -1,9 +1,28 @@
 import type { PageContextServer } from "vike/types";
 import { adminPublicPath } from "../lib/admin-path";
-import { getPublicSiteInfo } from "../modules/site/service";
+
+const defaultSiteShell = {
+  siteName: "",
+  siteUrl: "",
+  siteSubtitle: "",
+  logoIcon: "",
+  logo: "",
+  notice: "",
+  noticePageZh: "",
+  noticePageEn: "",
+  aboutPageZh: "",
+  aboutPageEn: "",
+  supportContact: null,
+  footerText: null,
+  orderNotice: null,
+};
 
 export async function onBeforeRender(pageContext: PageContextServer) {
-  const site = await getPublicSiteInfo(pageContext.prisma);
+  const isAdminRoute = pageContext.urlPathname?.startsWith("/admin") ?? false;
+  const site = isAdminRoute
+    ? { ...defaultSiteShell }
+    : await (await import("../modules/site/service")).getPublicSiteInfo(pageContext.prisma);
+
   return {
     pageContext: {
       site,

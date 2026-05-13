@@ -1,5 +1,5 @@
 import { assertAdminAccess } from "../../../modules/auth/service";
-import { savePaymentConfig } from "../../../modules/payment/service";
+import { savePaymentConfig } from "../../../modules/payment/config-admin";
 import type { PaymentProvider } from "../../../modules/payment/types";
 
 export async function onSavePaymentConfig(input: {

@@ -5,6 +5,7 @@ import { badRequestError, conflictError, notFoundError } from "../../lib/app-err
 import { validateOrderInput } from "../../lib/validators/order";
 import { getAdminContext, logAdminOperation } from "../auth/service";
 import { getAdminProductById } from "../catalog/service";
+import { getPaymentConfig } from "../payment/config";
 import { createPaymentForOrder, handlePaymentNotify, validatePaymentSelection } from "../payment/service";
 import { deliverOrder } from "../delivery/service";
 import { closeOrderRecord, createOrderRecord, deleteOrderRecords, findOrderById, findOrderWithProduct, listOrderRecords } from "./repository";
@@ -48,6 +49,48 @@ type OrderQueryOptions = {
   deliveryRecoveryAfterMs?: number;
 };
 
+const PAYMENT_SYNC_WAIT_MAX_MS = 3200;
+const DELIVERY_SYNC_WAIT_MAX_MS = 4200;
+
+function getDefaultPaymentProviderName(provider: string) {
+  switch (provider) {
+    case "EPAY":
+      return "易支付";
+    case "BEPUSDT":
+      return "BEpusdt";
+    case "ALIPAY":
+      return "支付宝";
+    case "STRIPE":
+      return "Stripe";
+    default:
+      return "支付方式";
+  }
+}
+
+function formatPaymentProviderDisplayName(provider: string, providerName: string, paymentChannel?: string | null) {
+  const channel = paymentChannel?.trim();
+  if (provider === "BEPUSDT" && channel) {
+    return `${providerName} / ${channel}`;
+  }
+  return providerName;
+}
+
+async function getPaymentProviderDisplayName(client: PrismaClient, provider: string, paymentChannel?: string | null) {
+  try {
+    const config = await getPaymentConfig(provider as PaymentProvider, client);
+    const providerName = config?.name?.trim() || getDefaultPaymentProviderName(provider);
+    return formatPaymentProviderDisplayName(provider, providerName, paymentChannel);
+  } catch (error) {
+    logger.warn("order.payment_provider_name.resolve_failed", {
+      event: "order.payment_provider_name.resolve_failed",
+      provider,
+      paymentChannel,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return formatPaymentProviderDisplayName(provider, getDefaultPaymentProviderName(provider), paymentChannel);
+  }
+}
+
 async function waitForPaymentSync(
   client: PrismaClient,
   orderNo: string,
@@ -55,7 +98,10 @@ async function waitForPaymentSync(
   currentOrder: NonNullable<Awaited<ReturnType<typeof findOrderWithProduct>>>,
   options: OrderQueryOptions,
 ) {
-  const waitForSyncMs = Math.max(0, Math.min(options.waitForSyncMs ?? 0, 2500));
+  const requestedWaitForSyncMs = options.waitForSyncMs ?? 0;
+  const waitForSyncMs = requestedWaitForSyncMs > 0
+    ? Math.max(600, Math.min(requestedWaitForSyncMs, PAYMENT_SYNC_WAIT_MAX_MS))
+    : 0;
   if (waitForSyncMs <= 0 || currentOrder.paymentStatus !== "UNPAID" || currentOrder.status !== "PENDING") {
     return currentOrder;
   }
@@ -78,14 +124,62 @@ async function waitForPaymentSync(
     }
   }
 
+  if (order.paymentStatus === "UNPAID" && order.status === "PENDING") {
+    const refreshed = await findOrderWithProduct(client, orderNo);
+    if (refreshed && refreshed.queryToken === queryToken) {
+      order = refreshed;
+    }
+  }
+
   return order;
 }
 
-function hasDeliveryContents(order: NonNullable<Awaited<ReturnType<typeof findOrderWithProduct>>>) {
-  return (
-    order.deliveries.some((item) => item.status === "SUCCESS") ||
-    order.cards.some((card) => card.status === "SOLD")
-  );
+function parseDeliverySnapshot(contentSnapshot: string) {
+  try {
+    const parsed = JSON.parse(contentSnapshot) as unknown;
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [contentSnapshot];
+  } catch {
+    return [contentSnapshot];
+  }
+}
+
+function getDeliveryContentsFromOrder(order: NonNullable<Awaited<ReturnType<typeof findOrderWithProduct>>>) {
+  const successfulDeliveryContents = order.deliveries.filter((item) => item.status === "SUCCESS").flatMap((item) => parseDeliverySnapshot(item.contentSnapshot));
+  const soldCardContents = order.cards.filter((card) => card.status === "SOLD").map((card) => card.content);
+  return successfulDeliveryContents.length > 0 ? successfulDeliveryContents : soldCardContents;
+}
+
+function hasCompleteDeliveryContents(order: NonNullable<Awaited<ReturnType<typeof findOrderWithProduct>>>) {
+  return getDeliveryContentsFromOrder(order).length >= order.quantity;
+}
+
+async function reconcileDeliveredStatus(
+  client: PrismaClient,
+  orderNo: string,
+  queryToken: string,
+  currentOrder: NonNullable<Awaited<ReturnType<typeof findOrderWithProduct>>>,
+) {
+  if (currentOrder.paymentStatus !== "PAID" || !hasCompleteDeliveryContents(currentOrder)) {
+    return currentOrder;
+  }
+
+  if (currentOrder.deliveryStatus === "DELIVERED" && currentOrder.status === "DELIVERED") {
+    return currentOrder;
+  }
+
+  await client.order.update({
+    where: { orderNo },
+    data: {
+      status: "DELIVERED",
+      deliveryStatus: "DELIVERED",
+      deliveredAt: currentOrder.deliveredAt ?? new Date(),
+      deliveryLockToken: null,
+      deliveryLockedAt: null,
+    },
+  });
+
+  const refreshed = await findOrderWithProduct(client, orderNo);
+  return refreshed && refreshed.queryToken === queryToken ? refreshed : currentOrder;
 }
 
 async function waitForDeliverySync(
@@ -95,36 +189,24 @@ async function waitForDeliverySync(
   currentOrder: NonNullable<Awaited<ReturnType<typeof findOrderWithProduct>>>,
   options: OrderQueryOptions,
 ) {
-  const waitForDeliveryMs = Math.max(0, Math.min(options.waitForDeliveryMs ?? 900, 4000));
-  if (currentOrder.paymentStatus === "PAID" && currentOrder.deliveryStatus !== "DELIVERED" && hasDeliveryContents(currentOrder)) {
-    try {
-      await deliverOrder(client, orderNo);
-      const refreshed = await findOrderWithProduct(client, orderNo);
-      if (refreshed && refreshed.queryToken === queryToken) {
-        return refreshed;
-      }
-    } catch (error) {
-      logger.warn("order.query_delivery_reconcile.skipped", {
-        event: "order.query_delivery_reconcile.skipped",
-        orderNo,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  let order = await reconcileDeliveredStatus(client, orderNo, queryToken, currentOrder);
+  const requestedWaitForDeliveryMs = options.waitForDeliveryMs ?? 900;
+  const waitForDeliveryMs = requestedWaitForDeliveryMs > 0
+    ? Math.max(700, Math.min(requestedWaitForDeliveryMs, DELIVERY_SYNC_WAIT_MAX_MS))
+    : 0;
+
+  if (waitForDeliveryMs <= 0 || order.paymentStatus !== "PAID" || order.deliveryStatus === "FAILED" || hasCompleteDeliveryContents(order)) {
+    return order;
   }
 
-  if (waitForDeliveryMs <= 0 || currentOrder.paymentStatus !== "PAID" || currentOrder.deliveryStatus === "DELIVERED" || hasDeliveryContents(currentOrder)) {
-    return currentOrder;
-  }
-
-  const pollIntervalMs = Math.max(150, Math.min(options.deliveryPollIntervalMs ?? options.pollIntervalMs ?? 250, 600));
+  const pollIntervalMs = Math.max(120, Math.min(options.deliveryPollIntervalMs ?? options.pollIntervalMs ?? 220, 500));
   const recoveryAfterMs = Math.max(200, Math.min(options.deliveryRecoveryAfterMs ?? 650, waitForDeliveryMs));
   const deadline = Date.now() + waitForDeliveryMs;
   const startedAt = Date.now();
-  let order = currentOrder;
   let recoveryAttempted = false;
 
   while (Date.now() < deadline) {
-    if (!recoveryAttempted && Date.now() - startedAt >= recoveryAfterMs && order.deliveryStatus !== "FAILED") {
+    if (!recoveryAttempted && order.deliveryStatus !== "DELIVERED" && Date.now() - startedAt >= recoveryAfterMs) {
       recoveryAttempted = true;
       try {
         await deliverOrder(client, orderNo);
@@ -132,8 +214,8 @@ async function waitForDeliverySync(
         if (!refreshed || refreshed.queryToken !== queryToken) {
           break;
         }
-        order = refreshed;
-        if (order.paymentStatus !== "PAID" || order.deliveryStatus === "DELIVERED" || hasDeliveryContents(order)) {
+        order = await reconcileDeliveredStatus(client, orderNo, queryToken, refreshed);
+        if (order.paymentStatus !== "PAID" || order.deliveryStatus === "FAILED" || hasCompleteDeliveryContents(order)) {
           break;
         }
       } catch (error) {
@@ -152,10 +234,15 @@ async function waitForDeliverySync(
       break;
     }
 
-    order = refreshed;
-    if (order.paymentStatus !== "PAID" || order.deliveryStatus === "FAILED" || order.deliveryStatus === "DELIVERED" || hasDeliveryContents(order)) {
+    order = await reconcileDeliveredStatus(client, orderNo, queryToken, refreshed);
+    if (order.paymentStatus !== "PAID" || order.deliveryStatus === "FAILED" || hasCompleteDeliveryContents(order)) {
       break;
     }
+  }
+
+  const refreshed = await findOrderWithProduct(client, orderNo);
+  if (refreshed && refreshed.queryToken === queryToken) {
+    order = await reconcileDeliveredStatus(client, orderNo, queryToken, refreshed);
   }
 
   return order;
@@ -280,16 +367,8 @@ export async function getOrderForQuery(
   order = await waitForPaymentSync(client, orderNo, queryToken, order, options);
   order = await waitForDeliverySync(client, orderNo, queryToken, order, options);
 
-  const successfulDeliveryContents = order.deliveries.filter((item) => item.status === "SUCCESS").flatMap((item) => {
-    try {
-      const parsed = JSON.parse(item.contentSnapshot) as string[];
-      return Array.isArray(parsed) ? parsed : [item.contentSnapshot];
-    } catch {
-      return [item.contentSnapshot];
-    }
-  });
-  const soldCardContents = order.cards.filter((card) => card.status === "SOLD").map((card) => card.content);
-  const deliveryContents = successfulDeliveryContents.length > 0 ? successfulDeliveryContents : soldCardContents;
+  const deliveryContents = getDeliveryContentsFromOrder(order);
+  const paymentProviderName = await getPaymentProviderDisplayName(client, order.paymentProvider, order.paymentChannel);
 
   return {
     id: order.id,
@@ -302,6 +381,8 @@ export async function getOrderForQuery(
     quantity: order.quantity,
     amount: order.amount,
     paymentProvider: order.paymentProvider,
+    paymentChannel: order.paymentChannel,
+    paymentProviderName,
     productSlug: order.product.slug,
     createdAt: order.createdAt.toISOString(),
     deliveryContents,

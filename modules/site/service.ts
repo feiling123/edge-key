@@ -43,6 +43,12 @@ function normalizeSetting(record: Awaited<ReturnType<typeof getSiteSettingRecord
   };
 }
 
+export function getDefaultSiteShell() {
+  return {
+    ...defaultSiteSetting,
+  };
+}
+
 export async function getPublicSiteInfo(prisma?: PrismaClient) {
   const client = prisma ?? getContext<{ prisma: PrismaClient }>().prisma;
   const record = await getSiteSettingRecord(client);

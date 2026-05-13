@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { watchEffect } from "vue";
+import { computed } from "vue";
 import SecretInput from "../../../../components/SecretInput.vue";
 import { useI18n } from "../../../../lib/client-i18n";
 const props = defineProps<{ modelValue: Record<string, any> }>();
@@ -44,32 +44,31 @@ const paymentTypes = [
   "USDC-ArbitrumOne",
 ];
 
-function currentPaymentTypes() {
-  const configured = Array.isArray(props.modelValue.paymentTypes) ? props.modelValue.paymentTypes : [];
-  const legacy = typeof props.modelValue.paymentType === "string" ? [props.modelValue.paymentType] : [];
-  return Array.from(new Set([...configured, ...legacy].map((item) => String(item).trim()).filter(Boolean)));
+function normalizePaymentTypes(values: unknown[]) {
+  return Array.from(new Set(values.map((item) => String(item).trim()).filter(Boolean)));
 }
 
+const selectedPaymentTypes = computed(() => {
+  const configured = Array.isArray(props.modelValue.paymentTypes) ? props.modelValue.paymentTypes : [];
+  const legacy = typeof props.modelValue.paymentType === "string" ? [props.modelValue.paymentType] : [];
+  return normalizePaymentTypes([...configured, ...legacy]);
+});
+
+const selectedPaymentTypeSet = computed(() => new Set(selectedPaymentTypes.value));
+
 function syncPaymentTypes(values: string[]) {
-  const normalized = Array.from(new Set(values.map((item) => item.trim()).filter(Boolean)));
+  const normalized = normalizePaymentTypes(values);
   props.modelValue.paymentTypes = normalized;
   props.modelValue.paymentType = normalized[0] ?? "";
 }
 
 function isSelected(item: string) {
-  return currentPaymentTypes().includes(item);
+  return selectedPaymentTypeSet.value.has(item);
 }
 
 function togglePaymentType(item: string) {
-  const values = currentPaymentTypes();
+  const values = selectedPaymentTypes.value;
   const next = values.includes(item) ? values.filter((value) => value !== item) : [...values, item];
   syncPaymentTypes(next.length ? next : [item]);
 }
-
-watchEffect(() => {
-  const values = currentPaymentTypes();
-  if (!Array.isArray(props.modelValue.paymentTypes) || props.modelValue.paymentType !== values[0]) {
-    syncPaymentTypes(values.length ? values : ["USDT-TRC20"]);
-  }
-});
 </script>

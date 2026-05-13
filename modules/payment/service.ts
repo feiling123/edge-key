@@ -1,14 +1,12 @@
 import { getContext } from "telefunc";
 import type { PrismaClient } from "../../generated/prisma/client";
-import { badRequestError, conflictError, externalServiceError, notFoundError } from "../../lib/app-error";
+import { badRequestError, conflictError, notFoundError } from "../../lib/app-error";
 import { logger } from "../../lib/logger";
-import { validatePaymentConfigInput } from "../../lib/validators/payment";
-import { getAdminContext, logAdminOperation } from "../auth/service";
 import { notifyOrderPaid } from "../notify/service";
 import { getSiteSetting } from "../site/service";
-import { createPaymentLogRecord, getPaymentConfigRecord, listPaymentConfigRecords, upsertPaymentConfigRecord } from "./repository";
-import type { PaymentMethodItem, PaymentProvider } from "./types";
-import type { PaymentConfigValue } from "./types";
+import { createPaymentLogRecord } from "./repository";
+import type { PaymentProvider, PaymentConfigValue } from "./types";
+import { defaultPaymentConfigs, getPaymentConfigs } from "./config";
 import { createBepusdtAdapter } from "./bepusdt";
 import { createEpayAdapter } from "./epay";
 import { createAlipayAdapter, queryAlipayTrade } from "./alipay";
@@ -16,221 +14,11 @@ import { createStripeAdapter } from "./stripe";
 import { deliverOrder } from "../delivery/service";
 import { findOrderRecord, updateOrderPayment } from "../order/repository";
 
-const defaultPaymentConfigs: Record<PaymentProvider, PaymentConfigValue> = {
-  BEPUSDT: {
-    provider: "BEPUSDT",
-    name: "BEpusdt",
-    isEnabled: false,
-    baseUrl: "",
-    appId: "",
-    appSecret: "",
-    merchantId: "default",
-    paymentType: "USDT-TRC20",
-    paymentTypes: ["USDT-TRC20"],
-    notifyUrl: "/api/payments/bepusdt/notify",
-    returnUrl: "/order/{orderNo}?token={token}",
-  },
-  EPAY: {
-    provider: "EPAY",
-    name: "聚合支付",
-    isEnabled: false,
-    baseUrl: "",
-    pid: "",
-    key: "",
-    notifyUrl: "/api/payments/epay/notify",
-    returnUrl: "/order/{orderNo}?token={token}",
-  },
-  ALIPAY: {
-    provider: "ALIPAY",
-    name: "支付宝",
-    isEnabled: false,
-    baseUrl: "https://openapi.alipay.com",
-    alipayAppId: "",
-    alipayPrivateKey: "",
-    alipayPublicKey: "",
-    notifyUrl: "/api/payments/alipay/notify",
-    returnUrl: "/order/{orderNo}?token={token}",
-  },
-  STRIPE: {
-    provider: "STRIPE",
-    name: "Stripe",
-    isEnabled: false,
-    baseUrl: "https://api.stripe.com",
-    stripeSecretKey: "",
-    stripeWebhookSecret: "",
-    stripeCurrency: "cny",
-    notifyUrl: "/api/payments/stripe/notify",
-    returnUrl: "/order/{orderNo}?token={token}",
-  },
-};
+export { getPaymentConfigs, listEnabledPaymentMethods, validatePaymentSelection } from "./config";
+export { savePaymentConfig } from "./config-admin";
 
 function getPaymentContext() {
   return getContext<{ prisma: PrismaClient }>();
-}
-
-function normalizePaymentConfig(record: Awaited<ReturnType<typeof getPaymentConfigRecord>>, provider: PaymentProvider): PaymentConfigValue {
-  const defaults = defaultPaymentConfigs[provider];
-  if (!record) {
-    return defaults;
-  }
-
-  try {
-    const parsed = JSON.parse(record.configJson) as Partial<PaymentConfigValue>;
-    return {
-      ...defaults,
-      ...parsed,
-      provider,
-      name: record.name,
-      isEnabled: record.isEnabled,
-    };
-  } catch {
-    return {
-      ...defaults,
-      name: record.name,
-      isEnabled: record.isEnabled,
-    };
-  }
-}
-
-function normalizeBepusdtPaymentTypes(input: Pick<PaymentConfigValue, "paymentType" | "paymentTypes">): string[] {
-  return Array.from(
-    new Set(
-      [...(Array.isArray(input.paymentTypes) ? input.paymentTypes : []), input.paymentType ?? ""]
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ),
-  );
-}
-
-export async function listEnabledPaymentMethods(prisma?: PrismaClient): Promise<PaymentMethodItem[]> {
-  const client = prisma ?? getPaymentContext().prisma;
-  const records = await listPaymentConfigRecords(client);
-
-  const methods: PaymentMethodItem[] = [];
-  for (const provider of Object.keys(defaultPaymentConfigs) as PaymentProvider[]) {
-    const record = records.find((item) => item.provider === provider);
-    const value = normalizePaymentConfig(record ?? null, provider);
-
-    if (provider === "BEPUSDT") {
-      const paymentTypes = normalizeBepusdtPaymentTypes(value);
-      for (const paymentType of paymentTypes.length ? paymentTypes : ["USDT-TRC20"]) {
-        methods.push({
-          provider,
-          label: paymentType,
-          enabled: value.isEnabled,
-          baseUrl: value.baseUrl,
-          paymentChannel: paymentType,
-        });
-      }
-      continue;
-    }
-
-    methods.push({
-      provider,
-      label: value.name,
-      enabled: value.isEnabled,
-      baseUrl: value.baseUrl,
-    });
-  }
-
-  return methods;
-}
-
-export async function getPaymentConfigs(prisma?: PrismaClient): Promise<Record<string, PaymentConfigValue>> {
-  const client = prisma ?? getPaymentContext().prisma;
-  const records = await listPaymentConfigRecords(client);
-  const result: Record<string, PaymentConfigValue> = {};
-  for (const provider of Object.keys(defaultPaymentConfigs) as PaymentProvider[]) {
-    const record = records.find((r) => r.provider === provider) ?? null;
-    result[provider] = normalizePaymentConfig(record, provider);
-  }
-  return result;
-}
-
-export async function validatePaymentSelection(
-  input: { provider: PaymentProvider; paymentChannel?: string },
-  prisma?: PrismaClient,
-): Promise<string | null> {
-  const client = prisma ?? getPaymentContext().prisma;
-  const configs = await getPaymentConfigs(client);
-  const config = configs[input.provider];
-
-  if (!config?.isEnabled) {
-    throw conflictError(`${config?.name ?? input.provider} 当前未启用`, "PAYMENT_PROVIDER_DISABLED");
-  }
-
-  if (!config.baseUrl) {
-    throw badRequestError(`${config.name} 缺少网关地址配置`, "PAYMENT_PROVIDER_BASE_URL_MISSING");
-  }
-
-  if (input.provider === "BEPUSDT") {
-    const paymentTypes = normalizeBepusdtPaymentTypes(config);
-    const selectedType = input.paymentChannel?.trim() || "";
-    if (!selectedType) {
-      throw badRequestError("请选择 BEpusdt 支付币种", "BEPUSDT_PAYMENT_TYPE_REQUIRED");
-    }
-    if (!paymentTypes.includes(selectedType)) {
-      throw badRequestError("BEpusdt 未启用该支付币种", "BEPUSDT_PAYMENT_TYPE_DISABLED");
-    }
-    return selectedType;
-  }
-
-  if (input.provider === "EPAY") {
-    return input.paymentChannel === "wxpay" ? "wxpay" : "alipay";
-  }
-
-  if (input.provider === "ALIPAY") {
-    return input.paymentChannel?.trim() || "alipay_h5";
-  }
-
-  return input.paymentChannel?.trim() || null;
-}
-
-export async function savePaymentConfig(input: PaymentConfigValue) {
-  const adminContext = getAdminContext();
-  const { prisma } = adminContext;
-  const adminId = Number(adminContext.session?.user?.id);
-  validatePaymentConfigInput(input as any);
-  const bepusdtPaymentTypes = input.provider === "BEPUSDT" ? normalizeBepusdtPaymentTypes(input) : [];
-  const config = {
-    baseUrl: input.baseUrl?.trim() || "",
-    appId: input.appId?.trim() || "",
-    appSecret: input.appSecret?.trim() || "",
-    merchantId: input.merchantId?.trim() || "default",
-    paymentType: input.provider === "BEPUSDT" ? (bepusdtPaymentTypes[0] ?? "") : (input.paymentType?.trim() || ""),
-    paymentTypes: bepusdtPaymentTypes,
-    pid: input.pid?.trim() || "",
-    key: input.key?.trim() || "",
-    notifyUrl: input.notifyUrl?.trim() || "",
-    returnUrl: input.returnUrl?.trim() || "",
-    alipayAppId: input.alipayAppId?.trim() || "",
-    alipayPrivateKey: input.alipayPrivateKey?.trim() || "",
-    alipayPublicKey: input.alipayPublicKey?.trim() || "",
-    stripeSecretKey: input.stripeSecretKey?.trim() || "",
-    stripeWebhookSecret: input.stripeWebhookSecret?.trim() || "",
-    stripeCurrency: input.stripeCurrency?.trim() || "cny",
-  };
-
-  const record = await upsertPaymentConfigRecord(prisma, input.provider, {
-    name: input.name.trim() || defaultPaymentConfigs[input.provider].name,
-    isEnabled: input.isEnabled,
-    configJson: JSON.stringify(config),
-  });
-
-  await logAdminOperation(
-    {
-      action: "SAVE_PAYMENT_CONFIG",
-      targetType: "PaymentConfig",
-      targetId: input.provider,
-      detail: `enabled=${input.isEnabled}`,
-    },
-    {
-      prisma,
-      adminId,
-    },
-  );
-
-  return normalizePaymentConfig(record, input.provider);
 }
 
 function createProviderAdapter(config: PaymentConfigValue) {
@@ -687,26 +475,11 @@ export async function handlePaymentNotify(
       status: verified.status,
     });
 
-    try {
-      await notifyOrderPaid({
-        prisma,
-        orderId: order.id,
-        orderNo: order.orderNo,
-        queryToken: order.queryToken,
-        productName: order.productNameSnapshot,
-        amount: order.amount,
-      });
-    } catch (error) {
-      logger.error(error instanceof Error ? error : String(error), {
-        event: "telegram.order_paid.failed",
-        provider,
-        orderNo: order.orderNo,
-      });
-    }
-
+    let deliveryError: unknown;
     try {
       await deliverOrder(prisma, verified.orderNo);
     } catch (error) {
+      deliveryError = error;
       writePaymentNotifyDiagnostic({
         provider,
         source,
@@ -726,10 +499,30 @@ export async function handlePaymentNotify(
         message: "delivery failed",
         status: verified.status,
       });
+    }
+
+    try {
+      await notifyOrderPaid({
+        prisma,
+        orderId: order.id,
+        orderNo: order.orderNo,
+        queryToken: order.queryToken,
+        productName: order.productNameSnapshot,
+        amount: order.amount,
+      });
+    } catch (error) {
+      logger.error(error instanceof Error ? error : String(error), {
+        event: "telegram.order_paid.failed",
+        provider,
+        orderNo: order.orderNo,
+      });
+    }
+
+    if (deliveryError) {
       return {
         ok: true,
         status: verified.status,
-        message: error instanceof Error ? `paid, delivery failed: ${error.message}` : "paid, delivery failed",
+        message: deliveryError instanceof Error ? `paid, delivery failed: ${deliveryError.message}` : "paid, delivery failed",
       };
     }
 

@@ -10,15 +10,21 @@
       <div class="modal-box space-y-3">
         <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
         <h3 class="text-lg font-bold">{{ l("新增卡密", "Add Card") }}</h3>
-        <select v-model="singleForm.productId" class="select select-bordered w-full">
+        <select
+          ref="addProductSelectRef"
+          v-model="singleForm.productId"
+          class="select select-bordered w-full"
+          :aria-invalid="!canCreateCard ? 'true' : 'false'"
+        >
           <option value="">{{ l("请选择商品", "Select product") }}</option>
           <option v-for="product in products" :key="product.id" :value="String(product.id)">{{ product.name }}</option>
         </select>
+        <p v-if="!canCreateCard" class="text-xs text-warning">{{ l("请先选择商品后再新增卡密", "Select a product before adding a card") }}</p>
         <input v-model="singleForm.batchNo" class="input input-bordered w-full" :placeholder="l('批次号（可选）', 'Batch No. (optional)')" />
         <textarea v-model="singleForm.content" class="textarea textarea-bordered w-full" rows="4" :placeholder="l('输入卡密内容', 'Enter card content')"></textarea>
         <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
         <div class="modal-action">
-          <AppButton variant="primary" @click="handleCreateCard">{{ l("新增卡密", "Add Card") }}</AppButton><form method="dialog"><AppButton variant="ghost">{{ l("取消", "Cancel") }}</AppButton></form>
+          <AppButton type="button" variant="primary" @click.prevent.stop="handleCreateCard">{{ l("新增卡密", "Add Card") }}</AppButton><form method="dialog"><AppButton variant="ghost">{{ l("取消", "Cancel") }}</AppButton></form>
         </div>
       </div>
       <form method="dialog" class="modal-backdrop"><button>{{ l("关闭", "Close") }}</button></form>
@@ -28,15 +34,21 @@
       <div class="modal-box space-y-3">
         <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
         <h3 class="text-lg font-bold">{{ l("批量导入", "Bulk Import") }}</h3>
-        <select v-model="importForm.productId" class="select select-bordered w-full">
+        <select
+          ref="importProductSelectRef"
+          v-model="importForm.productId"
+          class="select select-bordered w-full"
+          :aria-invalid="!canImportCards ? 'true' : 'false'"
+        >
           <option value="">{{ l("请选择商品", "Select product") }}</option>
           <option v-for="product in products" :key="product.id" :value="String(product.id)">{{ product.name }}</option>
         </select>
+        <p v-if="!canImportCards" class="text-xs text-warning">{{ l("请先选择商品后再导入卡密", "Select a product before importing cards") }}</p>
         <input v-model="importForm.batchNo" class="input input-bordered w-full" :placeholder="l('批次号（可选）', 'Batch No. (optional)')" />
         <textarea v-model="importForm.lines" class="textarea textarea-bordered w-full" rows="8" :placeholder="l('每行一条卡密', 'One card per line')"></textarea>
         <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
         <div class="modal-action">
-          <AppButton variant="primary" @click="handleImportCards">{{ l("导入卡密", "Import Cards") }}</AppButton>
+          <AppButton type="button" variant="primary" @click.prevent.stop="handleImportCards">{{ l("导入卡密", "Import Cards") }}</AppButton>
           <form method="dialog"><AppButton variant="ghost">{{ l("取消", "Cancel") }}</AppButton></form>
         </div>
       </div>
@@ -51,11 +63,12 @@
           <option value="">{{ l("请选择商品", "Select product") }}</option>
           <option v-for="product in products" :key="product.id" :value="String(product.id)">{{ product.name }}</option>
         </select>
+        <p v-if="!canUpdateCard" class="text-xs text-warning">{{ l("请先选择商品后再保存卡密", "Select a product before saving the card") }}</p>
         <input v-model="editForm.batchNo" class="input input-bordered w-full" :placeholder="l('批次号（可选）', 'Batch No. (optional)')" />
         <textarea v-model="editForm.content" class="textarea textarea-bordered w-full" rows="5" :placeholder="l('输入卡密内容', 'Enter card content')"></textarea>
         <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
         <div class="modal-action">
-          <AppButton variant="primary" @click="handleUpdateCard">{{ l("保存卡密", "Save Card") }}</AppButton>
+          <AppButton variant="primary" :disabled="!canUpdateCard" @click="handleUpdateCard">{{ l("保存卡密", "Save Card") }}</AppButton>
           <form method="dialog"><AppButton variant="ghost">{{ l("取消", "Cancel") }}</AppButton></form>
         </div>
       </div>
@@ -67,8 +80,8 @@
         <div class="flex items-center justify-between gap-4">
           <h2 class="text-xl font-bold">{{ l("库存列表", "Inventory") }}</h2>
           <div class="flex gap-2">
-            <AppButton size="sm" variant="primary" @click="addModalRef?.showModal()">{{ l("新增卡密", "Add Card") }}</AppButton>
-            <AppButton size="sm" variant="outline" @click="importModalRef?.showModal()">{{ l("批量导入", "Bulk Import") }}</AppButton>
+            <AppButton size="sm" variant="primary" @click="openAddCardModal">{{ l("新增卡密", "Add Card") }}</AppButton>
+            <AppButton size="sm" variant="outline" @click="openImportCardsModal">{{ l("批量导入", "Bulk Import") }}</AppButton>
             <AppButton size="sm" variant="danger" :disabled="!selectedCardIds.size" @click="handleDeleteSelectedCards">
               {{ l(`批量删除 (${selectedCardIds.size})`, `Delete Selected (${selectedCardIds.size})`) }}
             </AppButton>
@@ -176,6 +189,8 @@ const addModalRef = useTemplateRef<HTMLDialogElement>("addModalRef");
 const importModalRef = useTemplateRef<HTMLDialogElement>("importModalRef");
 const editModalRef = useTemplateRef<HTMLDialogElement>("editModalRef");
 const confirmRef = useTemplateRef<InstanceType<typeof ConfirmDialog>>("confirmRef");
+const addProductSelectRef = useTemplateRef<HTMLSelectElement>("addProductSelectRef");
+const importProductSelectRef = useTemplateRef<HTMLSelectElement>("importProductSelectRef");
 const message = ref("");
 const errorMessage = ref("");
 const selectedCardIds = ref(new Set<number>());
@@ -185,6 +200,11 @@ const filter = reactive({ productId: "", batchNo: "", status: "", startDate: "",
 const singleForm = reactive({ productId: "", content: "", batchNo: "" });
 const importForm = reactive({ productId: "", lines: "", batchNo: "" });
 const editForm = reactive({ id: 0, productId: "", content: "", batchNo: "" });
+
+const validProductIds = computed(() => new Set(products.map((product) => product.id)));
+const canCreateCard = computed(() => Boolean(getSelectedProductId(singleForm.productId)));
+const canImportCards = computed(() => Boolean(getSelectedProductId(importForm.productId)));
+const canUpdateCard = computed(() => Boolean(getSelectedProductId(editForm.productId)));
 
 const columns = computed(() => [
   { key: "select", label: "" },
@@ -216,6 +236,32 @@ function getStatusLabel(status: string) {
 
 function getCardStatusType(status: string): "success" | "default" | "warning" | "danger" {
   return ({ UNUSED: "success", SOLD: "default", LOCKED: "warning", DISABLED: "danger" } as Record<string, "success" | "default" | "warning" | "danger">)[status] ?? "default";
+}
+
+function getSelectedProductId(value: string) {
+  const productId = Number(value);
+  if (!Number.isInteger(productId) || productId <= 0) {
+    return null;
+  }
+  return validProductIds.value.has(productId) ? productId : null;
+}
+
+function requireSelectedProduct(value: string) {
+  const productId = getSelectedProductId(value);
+  if (!productId) {
+    errorMessage.value = l("请选择商品", "Select a product");
+    return null;
+  }
+  return productId;
+}
+
+function getCardsActionError(error: unknown, fallback: string) {
+  const value = error as { message?: unknown; ret?: { message?: unknown }; abortValue?: { message?: unknown } };
+  const message = value?.abortValue?.message ?? value?.ret?.message ?? value?.message;
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+  return normalizeTelefuncError(error, fallback);
 }
 
 async function fetchPage(page: number) {
@@ -279,12 +325,41 @@ function openEditCard(row: Data["cards"][number]) {
   editModalRef.value?.showModal();
 }
 
+async function openAddCardModal() {
+  message.value = "";
+  errorMessage.value = "";
+  if (!products.length) {
+    errorMessage.value = l("请先创建商品后再新增卡密", "Create a product before adding a card");
+    await confirmRef.value?.alert({ title: l("提示", "Notice"), message: errorMessage.value });
+    return;
+  }
+  addModalRef.value?.showModal();
+}
+
+async function openImportCardsModal() {
+  message.value = "";
+  errorMessage.value = "";
+  if (!products.length) {
+    errorMessage.value = l("请先创建商品后再导入卡密", "Create a product before importing cards");
+    await confirmRef.value?.alert({ title: l("提示", "Notice"), message: errorMessage.value });
+    return;
+  }
+  importModalRef.value?.showModal();
+}
+
 async function handleCreateCard() {
   message.value = "";
   errorMessage.value = "";
+  const productId = requireSelectedProduct(singleForm.productId);
+  if (!productId) {
+    addProductSelectRef.value?.focus();
+    await confirmRef.value?.alert({ title: l("提示", "Notice"), message: l("请先选择商品后再新增卡密", "Select a product before adding a card") });
+    return;
+  }
+
   try {
     await onCreateCard({
-      productId: Number(singleForm.productId),
+      productId,
       content: singleForm.content,
       batchNo: singleForm.batchNo,
     });
@@ -294,17 +369,20 @@ async function handleCreateCard() {
     message.value = l("新增成功", "Created");
     await fetchPage(1);
   } catch (error) {
-    errorMessage.value = normalizeTelefuncError(error, l("新增失败", "Create failed"));
+    errorMessage.value = getCardsActionError(error, l("新增失败", "Create failed"));
   }
 }
 
 async function handleUpdateCard() {
   message.value = "";
   errorMessage.value = "";
+  const productId = requireSelectedProduct(editForm.productId);
+  if (!productId) return;
+
   try {
     await onUpdateCard({
       id: editForm.id,
-      productId: Number(editForm.productId),
+      productId,
       content: editForm.content,
       batchNo: editForm.batchNo,
     });
@@ -312,16 +390,23 @@ async function handleUpdateCard() {
     message.value = l("卡密已更新", "Card updated");
     await fetchPage(currentPage.value);
   } catch (error) {
-    errorMessage.value = normalizeTelefuncError(error, l("保存失败", "Save failed"));
+    errorMessage.value = getCardsActionError(error, l("保存失败", "Save failed"));
   }
 }
 
 async function handleImportCards() {
   message.value = "";
   errorMessage.value = "";
+  const productId = requireSelectedProduct(importForm.productId);
+  if (!productId) {
+    importProductSelectRef.value?.focus();
+    await confirmRef.value?.alert({ title: l("提示", "Notice"), message: l("请先选择商品后再导入卡密", "Select a product before importing cards") });
+    return;
+  }
+
   try {
     const result = await onImportCards({
-      productId: Number(importForm.productId),
+      productId,
       lines: importForm.lines,
       batchNo: importForm.batchNo,
     });
@@ -331,7 +416,7 @@ async function handleImportCards() {
     message.value = l(`已导入 ${result.count} 条卡密`, `${result.count} card(s) imported`);
     await fetchPage(1);
   } catch (error) {
-    errorMessage.value = normalizeTelefuncError(error, l("导入失败", "Import failed"));
+    errorMessage.value = getCardsActionError(error, l("导入失败", "Import failed"));
   }
 }
 
@@ -356,7 +441,7 @@ async function handleDeleteSelectedCards() {
     message.value = l(`已删除 ${result.count} 条卡密`, `${result.count} card(s) deleted`);
     await fetchPage(currentPage.value);
   } catch (error) {
-    errorMessage.value = normalizeTelefuncError(error, l("删除失败", "Delete failed"));
+    errorMessage.value = getCardsActionError(error, l("删除失败", "Delete failed"));
   }
 }
 
@@ -378,7 +463,7 @@ async function handleDeleteCard(id: number) {
     message.value = l(`已删除卡密 #${id}`, `Card #${id} deleted`);
     await fetchPage(currentPage.value);
   } catch (error) {
-    errorMessage.value = normalizeTelefuncError(error, l("删除失败", "Delete failed"));
+    errorMessage.value = getCardsActionError(error, l("删除失败", "Delete failed"));
   }
 }
 
@@ -397,7 +482,7 @@ async function handleDeleteUnused() {
     message.value = l(`已删除 ${result.count} 条未售卡密`, `${result.count} unsold card(s) deleted`);
     await fetchPage(currentPage.value);
   } catch (error) {
-    errorMessage.value = normalizeTelefuncError(error, l("删除失败", "Delete failed"));
+    errorMessage.value = getCardsActionError(error, l("删除失败", "Delete failed"));
   }
 }
 </script>

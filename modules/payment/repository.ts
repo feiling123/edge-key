@@ -1,7 +1,26 @@
 import type { PrismaClient } from "../../generated/prisma/client";
 
-export function listPaymentConfigRecords(prisma: PrismaClient) {
+export function listPaymentConfigRecords(prisma: PrismaClient, providers?: readonly string[]) {
   return prisma.paymentConfig.findMany({
+    where: providers?.length ? { provider: { in: [...providers] } } : undefined,
+    select: {
+      provider: true,
+      name: true,
+      isEnabled: true,
+      configJson: true,
+    },
+    orderBy: [{ provider: "asc" }],
+  });
+}
+
+export function listPaymentConfigSummaries(prisma: PrismaClient, providers?: readonly string[]) {
+  return prisma.paymentConfig.findMany({
+    where: providers?.length ? { provider: { in: [...providers] } } : undefined,
+    select: {
+      provider: true,
+      name: true,
+      isEnabled: true,
+    },
     orderBy: [{ provider: "asc" }],
   });
 }
@@ -9,6 +28,12 @@ export function listPaymentConfigRecords(prisma: PrismaClient) {
 export function getPaymentConfigRecord(prisma: PrismaClient, provider: string) {
   return prisma.paymentConfig.findUnique({
     where: { provider },
+    select: {
+      provider: true,
+      name: true,
+      isEnabled: true,
+      configJson: true,
+    },
   });
 }
 

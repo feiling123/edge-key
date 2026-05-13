@@ -10,11 +10,11 @@ export async function data(pageContext: {
   const token = pageContext.urlParsed.search.token || "";
   return {
     order: await getOrderForQuery(pageContext.routeParams.orderNo, token, pageContext.urlParsed.search, pageContext.prisma, {
-      waitForSyncMs: 2200,
+      waitForSyncMs: 3200,
       pollIntervalMs: 220,
-      waitForDeliveryMs: 2800,
+      waitForDeliveryMs: 4200,
       deliveryPollIntervalMs: 220,
-      deliveryRecoveryAfterMs: 650,
+      deliveryRecoveryAfterMs: 500,
     }),
   };
 }

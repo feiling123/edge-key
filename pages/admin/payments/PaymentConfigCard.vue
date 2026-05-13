@@ -17,10 +17,16 @@
           <span class="label-text font-medium">{{ l("显示名称", "Display Name") }}</span>
           <input v-model="form.name" class="input input-bordered w-full" />
         </label>
-                <label class="flex flex-col gap-1.5">
-                  <span class="label-text font-medium">{{ l("网关地址（仅需填写主域名，系统处理接口）", "Gateway URL (base domain only; API path is handled by the system)") }}</span>
-                  <input v-model="form.baseUrl" class="input input-bordered w-full" :placeholder="l('https://pay.example.com（末尾请勿加斜杠）', 'https://pay.example.com (no trailing slash)')" :disabled="provider === 'STRIPE'" :readonly="provider === 'STRIPE'" />
-                </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="label-text font-medium">{{ l("网关地址（仅需填写主域名，系统处理接口）", "Gateway URL (base domain only; API path is handled by the system)") }}</span>
+          <input
+            v-model="form.baseUrl"
+            class="input input-bordered w-full"
+            :placeholder="l('https://pay.example.com（末尾请勿加斜杠）', 'https://pay.example.com (no trailing slash)')"
+            :disabled="provider === 'STRIPE'"
+            :readonly="provider === 'STRIPE'"
+          />
+        </label>
       </div>
 
       <component :is="formMap[provider]" v-model="extraFields" />
@@ -46,20 +52,20 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from "vue";
+import { defineAsyncComponent, reactive, ref } from "vue";
 import AppButton from "../../../components/AppButton.vue";
 import { normalizeTelefuncError } from "../../../lib/app-error";
-import { onSavePaymentConfig } from "./savePaymentConfig.telefunc";
-import BEpusdtForm from "./forms/BEpusdtForm.vue";
-import EpayForm from "./forms/EpayForm.vue";
-import AlipayForm from "./forms/AlipayForm.vue";
-import StripeForm from "./forms/StripeForm.vue";
 import type { PaymentProvider, PaymentConfigValue } from "../../../modules/payment/types";
 import { useI18n } from "../../../lib/client-i18n";
 
-const formMap = { BEPUSDT: BEpusdtForm, EPAY: EpayForm, ALIPAY: AlipayForm, STRIPE: StripeForm };
+const formMap = {
+  BEPUSDT: defineAsyncComponent(() => import("./forms/BEpusdtForm.vue")),
+  EPAY: defineAsyncComponent(() => import("./forms/EpayForm.vue")),
+  ALIPAY: defineAsyncComponent(() => import("./forms/AlipayForm.vue")),
+  STRIPE: defineAsyncComponent(() => import("./forms/StripeForm.vue")),
+};
 
-const emit = defineEmits<{ saved: [value: typeof props.initialValue] }>();
+const emit = defineEmits<{ saved: [value: PaymentConfigValue] }>();
 
 const props = defineProps<{
   provider: PaymentProvider;
@@ -76,14 +82,25 @@ const form = reactive({
   returnUrl: props.initialValue?.returnUrl ?? '',
 });
 
+function normalizePaymentTypes(values: unknown[]) {
+  return Array.from(new Set(values.map((item) => String(item).trim()).filter(Boolean)));
+}
+
+const initialBepusdtPaymentTypes = (() => {
+  const configured = Array.isArray(props.initialValue?.paymentTypes) ? props.initialValue.paymentTypes : [];
+  const legacy = props.initialValue?.paymentType ? [props.initialValue.paymentType] : [];
+  const normalized = normalizePaymentTypes([...configured, ...legacy]);
+  return normalized.length ? normalized : ['USDT-TRC20'];
+})();
+
 const extraFields = reactive(
   props.provider === 'BEPUSDT'
     ? {
         appId: props.initialValue?.appId ?? '',
         appSecret: props.initialValue?.appSecret ?? '',
         merchantId: props.initialValue?.merchantId ?? 'default',
-        paymentType: props.initialValue?.paymentType ?? props.initialValue?.paymentTypes?.[0] ?? 'USDT-TRC20',
-        paymentTypes: props.initialValue?.paymentTypes?.length ? props.initialValue.paymentTypes : [props.initialValue?.paymentType ?? 'USDT-TRC20'],
+        paymentType: initialBepusdtPaymentTypes[0] ?? 'USDT-TRC20',
+        paymentTypes: initialBepusdtPaymentTypes,
       }
     : props.provider === 'ALIPAY'
       ? { alipayAppId: props.initialValue?.alipayAppId ?? '', alipayPrivateKey: props.initialValue?.alipayPrivateKey ?? '', alipayPublicKey: props.initialValue?.alipayPublicKey ?? '' }
@@ -101,6 +118,7 @@ async function handleSave() {
   saved.value = false;
   errorMessage.value = '';
   try {
+    const { onSavePaymentConfig } = await import("./savePaymentConfig.telefunc");
     const result = await onSavePaymentConfig({ provider: props.provider, ...form, ...extraFields });
     form.name = result.name;
     form.isEnabled = result.isEnabled;

@@ -6,7 +6,11 @@ import migration0004 from "../prisma/migrations/0004_delivery_idempotency.sql?ra
 import migration0005 from "../prisma/migrations/0005_delivery_locks_and_telegram_audit.sql?raw";
 
 const bootstrappedDatabases = new WeakSet<D1Database>();
+const bootstrapInFlight = new WeakMap<D1Database, Promise<void>>();
+let currentIsolateBootstrapped = false;
+let currentIsolateBootstrap: Promise<void> | null = null;
 const migrationTable = "__edgekey_runtime_migrations";
+const seedMarkerId = "seed_default_v1";
 
 const migrations = [
   { id: "0001_init", sql: toIdempotentSql(migration0001) },
@@ -17,9 +21,29 @@ const migrations = [
 ];
 
 export async function ensureD1Ready(database: D1Database) {
-  if (bootstrappedDatabases.has(database)) return;
-  await bootstrapD1(database);
-  bootstrappedDatabases.add(database);
+  if (currentIsolateBootstrapped || bootstrappedDatabases.has(database)) return;
+
+  const existingBootstrap = currentIsolateBootstrap ?? bootstrapInFlight.get(database);
+  if (existingBootstrap) {
+    await existingBootstrap;
+    return;
+  }
+
+  const bootstrapPromise: Promise<void> = bootstrapD1(database)
+    .then(() => {
+      currentIsolateBootstrapped = true;
+      bootstrappedDatabases.add(database);
+    })
+    .finally(() => {
+      bootstrapInFlight.delete(database);
+      if (currentIsolateBootstrap === bootstrapPromise) {
+        currentIsolateBootstrap = null;
+      }
+    });
+
+  currentIsolateBootstrap = bootstrapPromise;
+  bootstrapInFlight.set(database, bootstrapPromise);
+  await bootstrapPromise;
 }
 
 async function bootstrapD1(database: D1Database) {
@@ -44,7 +68,13 @@ async function bootstrapD1(database: D1Database) {
       .run();
   }
 
-  await seedD1(database);
+  if (!applied.has(seedMarkerId)) {
+    await seedD1(database);
+    await database
+      .prepare(`INSERT OR REPLACE INTO "${migrationTable}" ("id", "appliedAt") VALUES (?, CURRENT_TIMESTAMP)`)
+      .bind(seedMarkerId)
+      .run();
+  }
 
   logger.info("d1.bootstrap.completed");
 }

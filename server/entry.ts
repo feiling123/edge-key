@@ -1,10 +1,9 @@
 import { authjsHandler, authjsSessionMiddleware } from "./authjs-handler";
-import { ensureD1Ready } from "./d1-bootstrap";
+import { ensureD1ReadyOnRequest } from "./d1-runtime-bootstrap";
 import { getPrismaForD1 } from "./prisma-factory";
 import { telefuncHandler } from "./telefunc-handler";
 import { prismaMiddleware } from "./prisma-middleware";
 import { registerApiRoutes } from "./routes";
-import { scheduled } from "./scheduled";
 import { adminPublicPath, INTERNAL_ADMIN_REWRITE_HEADER, isAdminPath, mapPublicAdminPath, nginx404 } from "../lib/admin-path";
 import { createRequestContext, runWithRequestContext } from "../lib/request-context";
 import { apply, serve } from "@photonjs/hono";
@@ -80,9 +79,10 @@ export function createApp() {
   // - `apiApp` 负责所有明确的 `/api/*` 路由及其所需中间件
   // - `apply(app, [...])` 继续负责页面、Auth.js、Telefunc 等通用链路
   apiApp.use("*", async (c, next) => {
-    const database = (c.env as { DB?: D1Database } | undefined)?.DB;
+    const env = c.env as { DB?: D1Database; RUNTIME_D1_BOOTSTRAP?: string; ENVIRONMENT?: string; NODE_ENV?: string } | undefined;
+    const database = env?.DB;
     if (database) {
-      await ensureD1Ready(database);
+      await ensureD1ReadyOnRequest(database, env);
       const prisma = getPrismaForD1(database);
 
       (c as any).set("universalContext", {
@@ -114,6 +114,12 @@ export function createApp() {
   ]);
 
   return app;
+}
+
+// Keep cron code out of the normal request import graph; it pulls runtime bootstrap/migration code.
+async function scheduled(controller: ScheduledController, env: { DB?: D1Database }, ctx: ExecutionContext) {
+  const mod = await import("./scheduled");
+  return mod.scheduled(controller, env, ctx);
 }
 
 // Photon 虚拟模块入口 把 scheduled 挂到 serve() 的返回值上，Photon 做 { ...entry } spread 时

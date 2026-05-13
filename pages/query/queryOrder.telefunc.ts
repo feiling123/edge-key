@@ -9,11 +9,11 @@ export async function onQueryOrder(input: { orderNo: string; queryToken?: string
       undefined,
       input.waitForSync
         ? {
-            waitForSyncMs: 2400,
+            waitForSyncMs: 3200,
             pollIntervalMs: 220,
-            waitForDeliveryMs: 3200,
+            waitForDeliveryMs: 4200,
             deliveryPollIntervalMs: 220,
-            deliveryRecoveryAfterMs: 700,
+            deliveryRecoveryAfterMs: 500,
           }
         : undefined,
     );

@@ -66,16 +66,16 @@
           <input v-model="form.subtitle" class="input input-bordered w-full" />
         </label>
         <div class="flex flex-col gap-1.5">
-          <span class="label-text font-medium">{{ l("商品封面（链接 / 上传 / Base64）", "Cover Image (URL / Upload / Base64)") }}</span>
+          <span class="label-text font-medium">{{ l("商品封面（图片链接，可上传转 Base64）", "Cover Image (URL, upload converts to Base64)") }}</span>
           <div class="flex gap-2 max-sm:flex-col">
             <input
               v-model="form.coverImage"
               class="input input-bordered w-full"
-              :placeholder="l('支持 https://... 或 data:image/... ', 'Supports https://... or data:image/...')"
+              :placeholder="l('可填写 https://... / data:image/...，或点上传', 'Enter https://... / data:image/... or upload')"
             />
             <input ref="coverFileInputRef" type="file" accept="image/*" class="hidden" @change="handleCoverImageFile" />
-            <AppButton variant="outline" :loading="coverImageBusy" @click="openCoverImagePicker">
-              {{ coverImageBusy ? l("处理中...", "Processing...") : l("上传图片", "Upload") }}
+            <AppButton variant="outline" :loading="coverImageBusy" :disabled="coverImageBusy" @click="openCoverImagePicker">
+              {{ coverImageBusy ? l("处理中...", "Processing...") : l("上传并转 Base64", "Upload to Base64") }}
             </AppButton>
             <AppButton
               variant="outline"
@@ -86,7 +86,14 @@
               {{ coverImageBusy ? l("处理中...", "Processing...") : l("转为 Base64", "Convert to Base64") }}
             </AppButton>
           </div>
-          <p class="text-xs text-base-content/60">{{ l("可直接填写图片地址，也可上传图片后自动转成 Base64 保存。", "Paste an image URL or upload a file to store it as Base64.") }}</p>
+          <p class="text-xs text-base-content/60">
+            {{
+              l(
+                "编辑商品时可保留原图片链接；选择本地图片会立即转为 Base64，保存商品后生效。远程链接仍可手动转为 Base64。",
+                "When editing, you can keep the existing image URL. Local uploads are converted to Base64 immediately and saved with the product. Remote URLs can still be converted manually.",
+              )
+            }}
+          </p>
           <p v-if="coverImageMessage" class="text-xs" :class="coverImageMessageType === 'error' ? 'text-error' : 'text-success'">
             {{ coverImageMessage }}
           </p>
@@ -165,7 +172,7 @@ async function handleCoverImageFile(event: Event) {
 
   try {
     form.coverImage = await imageFileToDataUrl(file, createImageDataUrlMessages(l));
-    setCoverImageMessage(l("封面图片已转为 Base64。", "Cover image converted to Base64."), "success");
+    setCoverImageMessage(l(`本地图片「${file.name}」已转为 Base64。`, `Local image "${file.name}" converted to Base64.`), "success");
   } catch (error) {
     setCoverImageMessage(error instanceof Error ? error.message : l("图片处理失败", "Image processing failed"), "error");
   } finally {
