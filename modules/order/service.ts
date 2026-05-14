@@ -13,7 +13,7 @@ import { generateOrderNo, generateQueryToken } from "./number";
 import { logger } from "../../lib/logger";
 import { getRequestContext } from "../../lib/request-context";
 import { notifyOrderDeleted } from "../notify/service";
-import { getSiteSetting } from "../site/service";
+import { getFullSiteSetting } from "../site/service";
 import { validateTurnstileToken } from "../../lib/utils/turnstile";
 import { validateOrderToken } from "../../lib/utils/order-token";
 
@@ -297,8 +297,8 @@ export async function createOrder(input: {
   const { prisma } = getOrderContext();
   const { contactValue } = validateOrderInput(input);
 
-  // 获取站点安全设置
-  const siteSettings = await getSiteSetting(prisma);
+  // 获取站点安全设置（包含敏感信息，仅服务端使用）
+  const siteSettings = await getFullSiteSetting(prisma);
 
   // 验证 Turnstile token
   if (siteSettings.enableTurnstile && siteSettings.turnstileSecretKey) {

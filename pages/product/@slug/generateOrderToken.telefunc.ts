@@ -1,4 +1,4 @@
-import { getSiteSetting } from "../../../modules/site/service";
+import { getFullSiteSetting } from "../../../modules/site/service";
 import { generateOrderToken } from "../../../lib/utils/order-token";
 import { getProductBySlug } from "../../../modules/catalog/service";
 import { notFoundError } from "../../../lib/app-error";
@@ -6,7 +6,7 @@ import { notFoundError } from "../../../lib/app-error";
 export async function onGenerateOrderToken(input: { productSlug: string }) {
   const [product, siteSettings] = await Promise.all([
     getProductBySlug(input.productSlug),
-    getSiteSetting(),
+    getFullSiteSetting(),
   ]);
 
   if (!product || product.status !== "ACTIVE") {

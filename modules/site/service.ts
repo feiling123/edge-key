@@ -27,6 +27,28 @@ const defaultSiteSetting = {
   orderTokenExpiryMin: 5,
 };
 
+const defaultPublicSiteSetting = {
+  siteName: "",
+  siteUrl: "",
+  siteSubtitle: "",
+  logoIcon: "",
+  logo: "",
+  notice: "",
+  noticePageZh: "",
+  noticePageEn: "",
+  aboutPageZh: "",
+  aboutPageEn: "",
+  supportContact: null,
+  footerText: null,
+  orderNotice: null,
+  // 公开安全功能配置（不包含 Secret Key）
+  enableTurnstile: false,
+  turnstileSiteKey: null,
+  // turnstileSecretKey 故意省略
+  enableOrderToken: false,
+  orderTokenExpiryMin: 5,
+};
+
 function normalizeSetting(record: Awaited<ReturnType<typeof getSiteSettingRecord>>) {
   if (!record) {
     return defaultSiteSetting;
@@ -55,6 +77,37 @@ function normalizeSetting(record: Awaited<ReturnType<typeof getSiteSettingRecord
   };
 }
 
+/**
+ * 获取公开的站点信息（不包含敏感数据）
+ */
+function normalizePublicSetting(record: Awaited<ReturnType<typeof getSiteSettingRecord>>) {
+  if (!record) {
+    return defaultPublicSiteSetting;
+  }
+
+  return {
+    siteName: record.siteName,
+    siteUrl: record.siteUrl ?? "",
+    siteSubtitle: record.siteSubtitle,
+    logoIcon: record.logoIcon ?? "",
+    logo: record.logo ?? "",
+    notice: record.notice,
+    noticePageZh: record.noticePageZh ?? "",
+    noticePageEn: record.noticePageEn ?? "",
+    aboutPageZh: record.aboutPageZh ?? "",
+    aboutPageEn: record.aboutPageEn ?? "",
+    supportContact: record.supportContact,
+    footerText: record.footerText,
+    orderNotice: record.orderNotice,
+    // 公开的安全功能配置（不包含 Secret Key）
+    enableTurnstile: record.enableTurnstile ?? false,
+    turnstileSiteKey: record.turnstileSiteKey ?? "", // 前端需要用这个
+    // turnstileSecretKey 故意省略，不暴露给前端
+    enableOrderToken: record.enableOrderToken ?? false,
+    orderTokenExpiryMin: record.orderTokenExpiryMin ?? 5,
+  };
+}
+
 export function getDefaultSiteShell() {
   return {
     ...defaultSiteSetting,
@@ -64,11 +117,21 @@ export function getDefaultSiteShell() {
 export async function getPublicSiteInfo(prisma?: PrismaClient) {
   const client = prisma ?? getContext<{ prisma: PrismaClient }>().prisma;
   const record = await getSiteSettingRecord(client);
-  return normalizeSetting(record);
+  return normalizePublicSetting(record);
 }
 
 export async function getSiteSetting(prisma?: PrismaClient) {
   return getPublicSiteInfo(prisma);
+}
+
+/**
+ * 获取完整的站点设置（包含敏感数据）
+ * 仅供服务端内部使用，不要传递给前端
+ */
+export async function getFullSiteSetting(prisma?: PrismaClient) {
+  const client = prisma ?? getContext<{ prisma: PrismaClient }>().prisma;
+  const record = await getSiteSettingRecord(client);
+  return normalizeSetting(record);
 }
 
 export async function saveSiteSetting(input: SiteSettingInput) {
