@@ -253,22 +253,25 @@ async function deleteCardsWithOrderCleanupOrThrow(
       throw conflictError("关联订单正在发货中，请稍后再删除", "CARD_DELETE_ORDER_DELIVERING");
     }
 
-    await prisma.orderDelivery.deleteMany({ where: { orderId: { in: existingIds } } });
-    await prisma.paymentLog.deleteMany({ where: { orderId: { in: existingIds } } });
-    if (orderNos.length) {
-      await prisma.paymentLog.deleteMany({ where: { orderNo: { in: orderNos } } });
-    }
-    await prisma.telegramLog.updateMany({ where: { orderId: { in: existingIds } }, data: { orderId: null } });
-    await prisma.card.updateMany({
-      where: {
-        id: { in: idsToDelete },
-        orderId: { in: existingIds },
-        status: { in: [...DELETABLE_CARD_STATUSES] },
-      },
-      data: {
-        orderId: null,
-        deliveryLockToken: null,
-      },
+    // 优化：使用事务批量处理删除操作，减少数据库往返
+    await prisma.$transaction(async (tx) => {
+      await tx.orderDelivery.deleteMany({ where: { orderId: { in: existingIds } } });
+      await tx.paymentLog.deleteMany({ where: { orderId: { in: existingIds } } });
+      if (orderNos.length) {
+        await tx.paymentLog.deleteMany({ where: { orderNo: { in: orderNos } } });
+      }
+      await tx.telegramLog.updateMany({ where: { orderId: { in: existingIds } }, data: { orderId: null } });
+      await tx.card.updateMany({
+        where: {
+          id: { in: idsToDelete },
+          orderId: { in: existingIds },
+          status: { in: [...DELETABLE_CARD_STATUSES] },
+        },
+        data: {
+          orderId: null,
+          deliveryLockToken: null,
+        },
+      });
     });
 
     await deleteOrdersWithDeliveryCleanupOrThrow(prisma, existingIds, deletionLockToken, context);

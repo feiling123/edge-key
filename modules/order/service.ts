@@ -570,41 +570,50 @@ export async function getDashboardMetrics(prisma?: PrismaClient) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const [todayOrders, paidTodayOrders, productCount, availableCards] = await Promise.all([
-    client.order.count({
-      where: {
-        createdAt: {
-          gte: today,
+  // 使用缓存优化仪表盘查询，避免频繁查询数据库
+  const { cachedQuery } = await import('../../lib/utils/performance-monitor');
+  
+  const cacheKey = `dashboard-metrics-${today.getTime()}`;
+  
+  return cachedQuery(cacheKey, async () => {
+    const [todayOrders, paidTodayOrders, productCount, availableCards] = await Promise.all([
+      client.order.count({
+        where: {
+          createdAt: {
+            gte: today,
+          },
         },
-      },
-    }),
-    client.order.findMany({
-      where: {
-        paymentStatus: "PAID",
-        paidAt: {
-          gte: today,
+      }),
+      // 优化：只查询必要字段，避免查询完整记录
+      client.order.aggregate({
+        where: {
+          paymentStatus: "PAID",
+          paidAt: {
+            gte: today,
+          },
         },
-      },
-      select: {
-        amount: true,
-      },
-    }),
-    client.product.count(),
-    client.card.count({
-      where: {
-        status: "UNUSED",
-      },
-    }),
-  ]);
+        _sum: {
+          amount: true,
+        },
+        _count: true,
+      }),
+      client.product.count(),
+      client.card.count({
+        where: {
+          status: "UNUSED",
+        },
+      }),
+    ]);
 
-  const paidAmount = paidTodayOrders.reduce((sum, item) => sum + item.amount, 0);
+    const paidAmount = paidTodayOrders._sum.amount || 0;
 
-  return [
-    { label: "今日订单", value: String(todayOrders) },
-    { label: "今日成交额", value: (paidAmount / 100).toFixed(2) },
-    { label: "商品数", value: String(productCount) },
-    { label: "剩余卡密", value: String(availableCards) },
-  ];
+    return [
+      { label: "今日订单", value: String(todayOrders) },
+      { label: "今日成交额", value: (paidAmount / 100).toFixed(2) },
+      { label: "商品数", value: String(productCount) },
+      { label: "剩余卡密", value: String(availableCards) },
+    ];
+  }, 2 * 60 * 1000); // 2分钟缓存
 }
 
 export async function getAdminOrderById(id: number, prisma?: PrismaClient) {
