@@ -22,6 +22,12 @@ export function upsertSiteSettingRecord(
     supportContact?: string | null;
     footerText?: string | null;
     orderNotice?: string | null;
+    // 安全功能配置
+    enableTurnstile?: boolean;
+    turnstileSiteKey?: string | null;
+    turnstileSecretKey?: string | null;
+    enableOrderToken?: boolean;
+    orderTokenExpiryMin?: number;
   },
 ) {
   return prisma.siteSetting.upsert({
@@ -41,6 +47,12 @@ export function upsertSiteSettingRecord(
       supportContact: input.supportContact ?? null,
       footerText: input.footerText ?? null,
       orderNotice: input.orderNotice ?? null,
+      // 安全功能配置
+      enableTurnstile: input.enableTurnstile ?? false,
+      turnstileSiteKey: input.turnstileSiteKey ?? null,
+      turnstileSecretKey: input.turnstileSecretKey ?? null,
+      enableOrderToken: input.enableOrderToken ?? false,
+      orderTokenExpiryMin: input.orderTokenExpiryMin ?? 5,
     },
     update: {
       siteName: input.siteName,
@@ -56,6 +68,12 @@ export function upsertSiteSettingRecord(
       supportContact: input.supportContact ?? null,
       footerText: input.footerText ?? null,
       orderNotice: input.orderNotice ?? null,
+      // 安全功能配置
+      enableTurnstile: input.enableTurnstile ?? false,
+      turnstileSiteKey: input.turnstileSiteKey ?? null,
+      turnstileSecretKey: input.turnstileSecretKey ?? null,
+      enableOrderToken: input.enableOrderToken ?? false,
+      orderTokenExpiryMin: input.orderTokenExpiryMin ?? 5,
     },
   });
 }

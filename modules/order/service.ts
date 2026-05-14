@@ -13,6 +13,9 @@ import { generateOrderNo, generateQueryToken } from "./number";
 import { logger } from "../../lib/logger";
 import { getRequestContext } from "../../lib/request-context";
 import { notifyOrderDeleted } from "../notify/service";
+import { getSiteSetting } from "../site/service";
+import { validateTurnstileToken } from "../../lib/utils/turnstile";
+import { validateOrderToken } from "../../lib/utils/order-token";
 
 function getOrderContext() {
   return getContext<{ prisma: PrismaClient }>();
@@ -287,16 +290,61 @@ export async function createOrder(input: {
   contactType: "EMAIL" | "QQ" | "TELEGRAM" | "OTHER";
   contactValue?: string;
   buyerNote?: string;
+  // 安全验证参数
+  turnstileToken?: string;
+  orderToken?: string;
 }) {
   const { prisma } = getOrderContext();
   const { contactValue } = validateOrderInput(input);
+
+  // 获取站点安全设置
+  const siteSettings = await getSiteSetting(prisma);
+
+  // 验证 Turnstile token
+  if (siteSettings.enableTurnstile && siteSettings.turnstileSecretKey) {
+    await validateTurnstileToken(input.turnstileToken, siteSettings.turnstileSecretKey);
+  }
+
+  // 验证短期下单 token
+  if (siteSettings.enableOrderToken) {
+    validateOrderToken(input.orderToken, input.productId);
+  }
+
   const product = await getAdminProductById(input.productId, prisma);
 
   if (!product || product.status !== "ACTIVE") {
     throw notFoundError("商品不存在或未上架", "PRODUCT_NOT_AVAILABLE");
   }
 
-  const quantity = Math.max(product.minBuy, Math.min(product.maxBuy, Math.floor(input.quantity)));
+  // 严格验证 quantity 边界
+  const requestedQuantity = Math.floor(input.quantity);
+  if (requestedQuantity < product.minBuy || requestedQuantity > product.maxBuy) {
+    throw badRequestError(
+      `购买数量必须在 ${product.minBuy}-${product.maxBuy} 之间`, 
+      "ORDER_QUANTITY_OUT_OF_RANGE"
+    );
+  }
+
+  // 检查库存（如果是有限库存模式）
+  if (product.stockMode === "FINITE") {
+    const availableStock = await prisma.card.count({
+      where: {
+        productId: product.id,
+        status: "UNUSED",
+      },
+    });
+
+    if (availableStock < requestedQuantity) {
+      throw conflictError(
+        availableStock > 0 
+          ? `库存不足，当前可购买数量：${availableStock}` 
+          : "商品已售罄",
+        "INSUFFICIENT_STOCK"
+      );
+    }
+  }
+
+  const quantity = requestedQuantity;
   const orderNo = generateOrderNo();
   const queryToken = generateQueryToken();
   const paymentChannel = await validatePaymentSelection(

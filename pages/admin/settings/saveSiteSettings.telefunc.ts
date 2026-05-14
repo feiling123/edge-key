@@ -15,6 +15,12 @@ export async function onSaveSiteSettings(input: {
   supportContact?: string;
   footerText?: string;
   orderNotice?: string;
+  // 安全功能配置
+  enableTurnstile?: boolean;
+  turnstileSiteKey?: string;
+  turnstileSecretKey?: string;
+  enableOrderToken?: boolean;
+  orderTokenExpiryMin?: number;
 }) {
   assertAdminAccess();
   return saveSiteSetting(input);

@@ -19,6 +19,12 @@ const defaultSiteSetting = {
   supportContact: null,
   footerText: null,
   orderNotice: null,
+  // 安全功能默认配置
+  enableTurnstile: false,
+  turnstileSiteKey: null,
+  turnstileSecretKey: null,
+  enableOrderToken: false,
+  orderTokenExpiryMin: 5,
 };
 
 function normalizeSetting(record: Awaited<ReturnType<typeof getSiteSettingRecord>>) {
@@ -40,6 +46,12 @@ function normalizeSetting(record: Awaited<ReturnType<typeof getSiteSettingRecord
     supportContact: record.supportContact,
     footerText: record.footerText,
     orderNotice: record.orderNotice,
+    // 安全功能配置（向后兼容）
+    enableTurnstile: record.enableTurnstile ?? false,
+    turnstileSiteKey: record.turnstileSiteKey ?? "",
+    turnstileSecretKey: record.turnstileSecretKey ?? "",
+    enableOrderToken: record.enableOrderToken ?? false,
+    orderTokenExpiryMin: record.orderTokenExpiryMin ?? 5,
   };
 }
 
@@ -79,6 +91,12 @@ export async function saveSiteSetting(input: SiteSettingInput) {
     supportContact: input.supportContact?.trim() || null,
     footerText: input.footerText?.trim() || null,
     orderNotice: input.orderNotice?.trim() || null,
+    // 安全功能配置
+    enableTurnstile: input.enableTurnstile ?? false,
+    turnstileSiteKey: input.turnstileSiteKey?.trim() || null,
+    turnstileSecretKey: input.turnstileSecretKey?.trim() || null,
+    enableOrderToken: input.enableOrderToken ?? false,
+    orderTokenExpiryMin: Math.max(1, Math.min(60, Math.floor(input.orderTokenExpiryMin ?? 5))),
   });
 
   await logAdminOperation(

@@ -94,6 +94,59 @@
         <textarea v-model="form.orderNotice" class="textarea textarea-bordered w-full" rows="4"></textarea>
       </label>
 
+      <!-- 安全功能配置 -->
+      <div class="rounded-box border border-base-300 bg-base-200/40 p-4">
+        <div class="mb-4">
+          <h2 class="text-lg font-semibold">{{ l("安全功能", "Security Features") }}</h2>
+          <p class="text-xs text-base-content/50">{{ l("配置订单安全验证功能，防止恶意下单和参数篡改。", "Configure order security verification to prevent malicious orders and parameter tampering.") }}</p>
+        </div>
+        
+        <!-- Turnstile 配置 -->
+        <div class="space-y-4">
+          <label class="flex cursor-pointer items-center gap-3">
+            <input v-model="form.enableTurnstile" type="checkbox" class="checkbox checkbox-primary" />
+            <div>
+              <span class="label-text font-medium">{{ l("启用 Cloudflare Turnstile 验证", "Enable Cloudflare Turnstile") }}</span>
+              <p class="text-xs text-base-content/60">{{ l("下单前需要通过人机验证", "Require human verification before placing orders") }}</p>
+            </div>
+          </label>
+          
+          <div v-if="form.enableTurnstile" class="grid gap-4 md:grid-cols-2 pl-8">
+            <label class="flex flex-col gap-1.5">
+              <span class="label-text font-medium">{{ l("Site Key", "Site Key") }}</span>
+              <input v-model="form.turnstileSiteKey" class="input input-bordered w-full" placeholder="0x4AAAAAAA..." />
+              <span class="text-xs text-base-content/50">{{ l("Cloudflare 控制台获取的公开密钥", "Public key from Cloudflare dashboard") }}</span>
+            </label>
+            <label class="flex flex-col gap-1.5">
+              <span class="label-text font-medium">{{ l("Secret Key", "Secret Key") }}</span>
+              <input v-model="form.turnstileSecretKey" type="password" class="input input-bordered w-full" placeholder="0x4AAAAAAA..." />
+              <span class="text-xs text-base-content/50">{{ l("用于服务端验证的私密密钥", "Private key for server-side verification") }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- 短期 Token 配置 -->
+        <div class="space-y-4">
+          <label class="flex cursor-pointer items-center gap-3">
+            <input v-model="form.enableOrderToken" type="checkbox" class="checkbox checkbox-primary" />
+            <div>
+              <span class="label-text font-medium">{{ l("启用短期下单凭证", "Enable Short-Term Order Token") }}</span>
+              <p class="text-xs text-base-content/60">{{ l("防止构造历史请求和跨商品参数篡改", "Prevent replay attacks and cross-product parameter tampering") }}</p>
+            </div>
+          </label>
+          
+          <div v-if="form.enableOrderToken" class="pl-8">
+            <label class="flex flex-col gap-1.5 max-w-xs">
+              <span class="label-text font-medium">{{ l("凭证有效期（分钟）", "Token Expiry (Minutes)") }}</span>
+              <input v-model.number="form.orderTokenExpiryMin" type="number" min="1" max="60" class="input input-bordered w-full" />
+              <span class="text-xs text-base-content/50">{{ l("建议 3-10 分钟", "Recommended: 3-10 minutes") }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
       <div class="flex items-center gap-3">
         <AppButton variant="primary" :loading="saving" @click="handleSave">{{ l("保存设置", "Save Settings") }}</AppButton>
         <span v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</span>
@@ -128,6 +181,12 @@ const form = reactive({
   supportContact: site.supportContact ?? "",
   footerText: site.footerText ?? "",
   orderNotice: site.orderNotice ?? "",
+  // 安全功能配置
+  enableTurnstile: site.enableTurnstile ?? false,
+  turnstileSiteKey: site.turnstileSiteKey ?? "",
+  turnstileSecretKey: site.turnstileSecretKey ?? "",
+  enableOrderToken: site.enableOrderToken ?? false,
+  orderTokenExpiryMin: site.orderTokenExpiryMin ?? 5,
 });
 
 const saving = ref(false);
@@ -154,6 +213,12 @@ async function handleSave() {
     form.supportContact = result.supportContact ?? "";
     form.footerText = result.footerText ?? "";
     form.orderNotice = result.orderNotice ?? "";
+    // 安全功能配置
+    form.enableTurnstile = result.enableTurnstile ?? false;
+    form.turnstileSiteKey = result.turnstileSiteKey ?? "";
+    form.turnstileSecretKey = result.turnstileSecretKey ?? "";
+    form.enableOrderToken = result.enableOrderToken ?? false;
+    form.orderTokenExpiryMin = result.orderTokenExpiryMin ?? 5;
     saved.value = true;
   } catch (error) {
     errorMessage.value = normalizeTelefuncError(error, l("保存失败", "Save failed"));

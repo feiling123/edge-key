@@ -82,6 +82,11 @@
 
 
 
+          <!-- Turnstile 验证 -->
+          <div v-if="siteSettings.enableTurnstile && siteSettings.turnstileSiteKey" class="space-y-2">
+            <div id="turnstile-container"></div>
+          </div>
+
           <AppButton variant="primary" :loading="submitting" :disabled="!paymentMethods.length" @click="handleCreateOrder">{{ t("product.submit") }}</AppButton>
           <p v-if="!paymentMethods.length" class="text-sm text-warning">{{ t("product.no_payment") }}</p>
           <p v-if="errorMessage" class="text-sm text-error">{{ errorMessage }}</p>
@@ -101,18 +106,23 @@ import { formatCents } from "../../../lib/utils/money";
 import { onCreateOrder } from "./createOrder.telefunc";
 import type { PaymentMethodItem, PaymentProvider } from "../../../modules/payment/types";
 import { isMobile } from "../../../lib/utils/device";
-import { onMounted, watch } from "vue";
+import { onMounted, onUnmounted, watch } from "vue";
 import { saveLocalOrder } from "../../../lib/local-orders";
 import { useI18n } from "../../../lib/client-i18n";
 import type { Data } from "./+data";
 import { formatRichContent } from "../../../lib/utils/html";
+import { onGenerateOrderToken } from "./generateOrderToken.telefunc";
 
 import emptyCoverUrl from "../../../assets/empty.jpg";
 
-const { product, paymentMethods } = useData<Data>();
+const { product, paymentMethods, siteSettings } = useData<Data>();
 const { l, t } = useI18n();
 const submitting = ref(false);
 const errorMessage = ref("");
+const orderToken = ref("");
+const turnstileToken = ref("");
+let turnstileWidget: any = null;
+let tokenRefreshInterval: NodeJS.Timeout | null = null;
 const epayChannels = [
   { value: "alipay", label: () => l("支付宝", "Alipay") },
   { value: "wxpay", label: () => l("微信支付", "WeChat Pay") },
@@ -141,10 +151,27 @@ const selectedPaymentMethodKey = ref(firstPaymentMethod ? paymentMethodKey(first
 const selectedPaymentMethod = computed(() => paymentMethods.find((method) => paymentMethodKey(method) === selectedPaymentMethodKey.value) ?? paymentMethods[0] ?? null);
 
 let mobile = false;
-onMounted(() => {
+onMounted(async () => {
   mobile = isMobile();
   if (form.paymentProvider === "ALIPAY") {
     form.paymentChannel = mobile ? "alipay_h5" : "alipay_pc";
+  }
+
+  // 初始化 Turnstile
+  if (siteSettings.enableTurnstile && siteSettings.turnstileSiteKey && product) {
+    initTurnstile();
+  }
+
+  // 初始化短期下单 token
+  if (siteSettings.enableOrderToken && product) {
+    await refreshOrderToken();
+    startTokenRefresh();
+  }
+});
+
+onUnmounted(() => {
+  if (tokenRefreshInterval) {
+    clearInterval(tokenRefreshInterval);
   }
 });
 
@@ -164,6 +191,49 @@ function selectPaymentMethod(method: PaymentMethodItem) {
   }
 }
 
+function initTurnstile() {
+  if (!window.turnstile || !siteSettings.turnstileSiteKey) return;
+
+  const container = document.getElementById('turnstile-container');
+  if (!container) return;
+
+  try {
+    turnstileWidget = window.turnstile.render(container, {
+      sitekey: siteSettings.turnstileSiteKey,
+      callback: (token: string) => {
+        turnstileToken.value = token;
+      },
+      'error-callback': () => {
+        turnstileToken.value = "";
+        errorMessage.value = t("product.turnstile_error", "人机验证失败，请刷新页面重试");
+      },
+    });
+  } catch (error) {
+    console.error('Turnstile initialization failed:', error);
+  }
+}
+
+async function refreshOrderToken() {
+  if (!product || !siteSettings.enableOrderToken) return;
+
+  try {
+    const result = await onGenerateOrderToken({ productSlug: product.slug });
+    orderToken.value = result.token;
+  } catch (error) {
+    console.error('Token refresh failed:', error);
+  }
+}
+
+function startTokenRefresh() {
+  if (tokenRefreshInterval) {
+    clearInterval(tokenRefreshInterval);
+  }
+
+  // 每4分钟刷新一次（比5分钟过期时间稍短）
+  const refreshIntervalMs = (siteSettings.orderTokenExpiryMin - 1) * 60 * 1000;
+  tokenRefreshInterval = setInterval(refreshOrderToken, refreshIntervalMs);
+}
+
 async function handleCreateOrder() {
   if (!product) return;
 
@@ -175,6 +245,18 @@ async function handleCreateOrder() {
 
   if (!isEmail(contactEmail)) {
     errorMessage.value = t("product.email_invalid");
+    return;
+  }
+
+  // 检查 Turnstile 验证
+  if (siteSettings.enableTurnstile && !turnstileToken.value) {
+    errorMessage.value = t("product.turnstile_required", "请完成人机验证");
+    return;
+  }
+
+  // 检查短期 token
+  if (siteSettings.enableOrderToken && !orderToken.value) {
+    errorMessage.value = t("product.token_required", "下单凭证已过期，请刷新页面");
     return;
   }
 
@@ -191,6 +273,9 @@ async function handleCreateOrder() {
       contactType: "EMAIL",
       contactValue: contactEmail,
       buyerNote: form.buyerNote,
+      // 安全验证数据
+      turnstileToken: turnstileToken.value || undefined,
+      orderToken: orderToken.value || undefined,
     });
 
     saveLocalOrder({

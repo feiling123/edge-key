@@ -12,4 +12,10 @@ export interface SiteSettingInput {
   supportContact?: string | null;
   footerText?: string | null;
   orderNotice?: string | null;
+  // 安全功能配置
+  enableTurnstile?: boolean;
+  turnstileSiteKey?: string | null;
+  turnstileSecretKey?: string | null;
+  enableOrderToken?: boolean;
+  orderTokenExpiryMin?: number;
 }

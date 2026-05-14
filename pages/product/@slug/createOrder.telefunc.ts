@@ -9,6 +9,9 @@ export async function onCreateOrder(input: {
   contactType: "EMAIL";
   contactValue: string;
   buyerNote?: string;
+  // 安全验证参数
+  turnstileToken?: string;
+  orderToken?: string;
 }) {
   return createOrder(input);
 }

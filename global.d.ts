@@ -14,6 +14,20 @@ declare global {
       adminBase?: string;
     }
   }
+
+  interface Window {
+    turnstile?: {
+      render: (container: HTMLElement, options: {
+        sitekey: string;
+        callback?: (token: string) => void;
+        'error-callback'?: () => void;
+        theme?: 'light' | 'dark';
+        size?: 'normal' | 'compact';
+      }) => string;
+      reset: (widgetId: string) => void;
+      remove: (widgetId: string) => void;
+    };
+  }
 }
 
 declare module "telefunc" {

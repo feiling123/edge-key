@@ -119,22 +119,28 @@ model Admin {
 }
 
 model SiteSetting {
-  id             Int      @id @default(1)
-  siteName       String
-  siteUrl        String?
-  siteSubtitle   String?
-  logoIcon       String?
-  logo           String?
-  notice         String?
-  noticePageZh   String?
-  noticePageEn   String?
-  aboutPageZh    String?
-  aboutPageEn    String?
-  supportContact String?
-  footerText     String?
-  orderNotice    String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                    Int      @id @default(1)
+  siteName              String
+  siteUrl               String?
+  siteSubtitle          String?
+  logoIcon              String?
+  logo                  String?
+  notice                String?
+  noticePageZh          String?
+  noticePageEn          String?
+  aboutPageZh           String?
+  aboutPageEn           String?
+  supportContact        String?
+  footerText            String?
+  orderNotice           String?
+  // 安全功能配置
+  enableTurnstile       Boolean  @default(false)
+  turnstileSiteKey      String?
+  turnstileSecretKey    String?
+  enableOrderToken      Boolean  @default(false)
+  orderTokenExpiryMin   Int      @default(5)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 model RuntimeSecret {
