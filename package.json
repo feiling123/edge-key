@@ -15,6 +15,7 @@
     "verify:payment-notify": "tsx scripts/verify-payment-notify.ts",
     "deploy": "wrangler deploy",
     "deploy:full": "npm run db:migrations:remote && npm run db:seed:remote && wrangler deploy",
+    "deploy:setup": "node scripts/deploy-setup.js",
     "up": "vike build && wrangler deploy",
     "types": "wrangler types"
   },

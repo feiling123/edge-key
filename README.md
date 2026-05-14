@@ -3,6 +3,18 @@
 
 # EdgeKey
 
+## 🚀 一键部署
+
+[![Deploy to Cloudflare Pages](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/feiling123/edge-key)
+
+### 部署步骤：
+1. 点击上方按钮一键部署到 Cloudflare Pages
+2. 创建 D1 数据库名为 `edgekey-db` 并绑定到项目
+3. 首次访问网站时会自动初始化数据库
+4. 使用 `admin/admin123` 登录后台并立即修改密码
+
+**就这么简单！** 🎉
+
 EdgeKey 是一套有vike框架开发，可直接部署到 Cloudflare 的一体化全栈卡密商城系统：同一套代码同时包含前端页面、SSR 渲染、后端 API / 数据变更入口，并由 Cloudflare Workers 运行。
 
 ## 功能特性
